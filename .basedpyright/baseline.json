@@ -1,0 +1,112 @@
+{
+    "files": {
+        "./miscellaneous/claude/claude-diag.py": [
+            {
+                "code": "reportImplicitStringConcatenation",
+                "range": {
+                    "startColumn": 8,
+                    "endColumn": 45,
+                    "lineCount": 2
+                }
+            },
+            {
+                "code": "reportImplicitStringConcatenation",
+                "range": {
+                    "startColumn": 8,
+                    "endColumn": 31,
+                    "lineCount": 2
+                }
+            },
+            {
+                "code": "reportAny",
+                "range": {
+                    "startColumn": 60,
+                    "endColumn": 68,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAny",
+                "range": {
+                    "startColumn": 12,
+                    "endColumn": 15,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAny",
+                "range": {
+                    "startColumn": 18,
+                    "endColumn": 31,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAny",
+                "range": {
+                    "startColumn": 18,
+                    "endColumn": 40,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAny",
+                "range": {
+                    "startColumn": 39,
+                    "endColumn": 42,
+                    "lineCount": 1
+                }
+            }
+        ],
+        "./server-scripts/backup/python/overengineered-backup-script.py": [
+            {
+                "code": "reportUnusedFunction",
+                "range": {
+                    "startColumn": 4,
+                    "endColumn": 29,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportImplicitStringConcatenation",
+                "range": {
+                    "startColumn": 16,
+                    "endColumn": 89,
+                    "lineCount": 4
+                }
+            },
+            {
+                "code": "reportImplicitStringConcatenation",
+                "range": {
+                    "startColumn": 20,
+                    "endColumn": 52,
+                    "lineCount": 7
+                }
+            },
+            {
+                "code": "reportImplicitStringConcatenation",
+                "range": {
+                    "startColumn": 24,
+                    "endColumn": 36,
+                    "lineCount": 4
+                }
+            },
+            {
+                "code": "reportImplicitStringConcatenation",
+                "range": {
+                    "startColumn": 24,
+                    "endColumn": 78,
+                    "lineCount": 3
+                }
+            },
+            {
+                "code": "reportImplicitStringConcatenation",
+                "range": {
+                    "startColumn": 20,
+                    "endColumn": 51,
+                    "lineCount": 3
+                }
+            }
+        ]
+    }
+}

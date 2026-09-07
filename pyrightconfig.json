@@ -1,0 +1,8 @@
+{
+  "pythonVersion": "3.14",
+  "typeCheckingMode": "recommended",
+  "include": [
+    "miscellaneous/claude/claude-diag.py",
+    "server-scripts/backup/python/overengineered-backup-script.py"
+  ]
+}
