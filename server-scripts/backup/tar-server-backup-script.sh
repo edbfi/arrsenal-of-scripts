@@ -201,7 +201,7 @@ create_backup() {
     cd / || error_exit "Failed to change to root directory"
 
     # Debug line: show which directories will be backed up
-    log "DEBUG: BACKUP_DIRS expanded to: ${BACKUP_DIRS[@]}"
+    log "DEBUG: BACKUP_DIRS expanded to: ${BACKUP_DIRS[*]}"
 
     local max_retries=3
     local retry_count=0
