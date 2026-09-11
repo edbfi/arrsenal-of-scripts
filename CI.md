@@ -31,7 +31,7 @@ live service compatibility remain manual validation requirements.
 
 The shared dispatch guard and `ci / required` gate reject invalid explicit PR
 SHAs, failed, cancelled, missing or skipped prerequisites. All validation tokens
-are read-only; action references use full version tags. Require this status from
-GitHub Actions with strict up-to-date protection, enforce administrators and
-prohibit force pushes/deletions. No blanket review requirement is needed.
-Automerge stays off until settings, policy and dependency coverage justify it.
+are read-only; action references use full version tags. Merges require manual
+review of the exact head and base, full diff, authors and DCO sign-offs, and all
+expected CI jobs. No branch protections or repository rulesets are configured.
+Automerge stays off.

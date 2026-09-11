@@ -4,7 +4,7 @@ This project contains scripts for Radarr and Sonarr to check if the imported fil
 
 ## Scripts
 
-### Radarr Script: `danishAudioRadarr.sh`
+### Radarr Script: `radarr-check-for-danish-audio.sh`
 
 This script checks for a Danish audio track in files managed by Radarr. If the file does not contain a Danish audio track, it marks the download as failed.
 
@@ -19,7 +19,7 @@ This script checks for a Danish audio track in files managed by Radarr. If the f
 
 2. Ensure the script has executable permissions:
     ```bash
-    chmod +x radarr/danishAudioRadarr.sh
+    chmod +x radarr/radarr-check-for-danish-audio.sh
     ```
 
 3. Configure Radarr to execute the script after a download is completed:
@@ -29,11 +29,11 @@ This script checks for a Danish audio track in files managed by Radarr. If the f
     - Choose `Custom Script`.
     - Fill in the required fields:
       - Name: `Danish Audio Check`
-      - Path: `/path/to/radarr/danishAudioRadarr.sh`
+      - Path: `/path/to/radarr/radarr-check-for-danish-audio.sh`
       - Select "On Import" and "On Upgrade" in "Notification Triggers".
     - Save the connection.
 
-### Sonarr Script: `danishAudioSonarr.sh`
+### Sonarr Script: `sonarr-check-for-danish-audio.sh`
 
 This script checks for a Danish audio track in files managed by Sonarr. If the file does not contain a Danish audio track, it deletes the episode file and marks the download as failed.
 
@@ -48,7 +48,7 @@ This script checks for a Danish audio track in files managed by Sonarr. If the f
 
 2. Ensure the script has executable permissions:
     ```bash
-    chmod +x sonarr/danishAudioSonarr.sh
+    chmod +x sonarr/sonarr-check-for-danish-audio.sh
     ```
 
 3. Configure Sonarr to execute the script after a download is completed:
@@ -58,7 +58,7 @@ This script checks for a Danish audio track in files managed by Sonarr. If the f
     - Choose `Custom Script`.
     - Fill in the required fields:
       - Name: `Danish Audio Check`
-      - Path: `/path/to/sonarr/danishAudioSonarr.sh`
+      - Path: `/path/to/sonarr/sonarr-check-for-danish-audio.sh`
       - Select "On Import" and "On Upgrade" in "Notification Triggers".
     - Save the connection.
 
@@ -70,4 +70,4 @@ Both scripts include log functions to provide debug and informational messages w
 
 ## License
 
-This project is licensed under the AGPLv3 License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the AGPLv3 License. See the [LICENSE](../LICENSE) file for details.

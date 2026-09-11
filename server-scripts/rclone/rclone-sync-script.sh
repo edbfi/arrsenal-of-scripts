@@ -21,7 +21,7 @@
 #
 # Usage:
 #   1. Download the script:
-#      wget https://raw.githubusercontent.com/engels74/arrsenal-of-scripts/refs/heads/main/server-scripts/rclone/rclone-sync-script.sh -O rclone_sync_script.sh
+#      wget https://raw.githubusercontent.com/edbfi/arrsenal-of-scripts/refs/heads/main/server-scripts/rclone/rclone-sync-script.sh -O rclone_sync_script.sh
 #
 #   2. Make it executable:
 #      chmod +x rclone_sync_script.sh

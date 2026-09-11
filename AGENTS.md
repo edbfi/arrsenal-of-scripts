@@ -122,9 +122,8 @@ tests leak state into each other.
 - `claude-diag.py --publish` uploads the report to PasteMyst, publicly. Any new field added to the
   report must pass through `Redactor`, and `SELF_TEST_FIXTURE` should gain a case for any new
   secret shape; `--self-test` fails loudly on leaked substrings.
-- `arr-scripts/README.md` is stale: it documents `danishAudioRadarr.sh` / `danishAudioSonarr.sh`,
-  renamed in `ce53824` to `radarr-check-for-danish-audio.sh` / `sonarr-check-for-danish-audio.sh`.
-  Trust the filenames on disk; its Radarr/Sonarr connection setup steps are still current.
+- `arr-scripts/README.md` uses the current `radarr-check-for-danish-audio.sh` and
+  `sonarr-check-for-danish-audio.sh` filenames. Preserve the standalone download paths.
 - `fail2ban-monitor.sh` and `fail2ban-monitor.zsh` are separate implementations, not one script
   with two shebangs. A behavioural fix to one does not propagate; state which variant you changed.
 - Commit messages use Conventional Commits with the component as scope — `fix(backup):`,

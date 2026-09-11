@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>engels74/automation//default.json#v1.0.0",
+    "github>edbfi/automation//default.json#v1.0.0",
     "customManagers:githubActionsVersions"
   ],
   "pep723": {

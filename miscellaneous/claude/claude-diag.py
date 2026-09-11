@@ -3,7 +3,7 @@
 
 Single-file, stdlib-only. Safe to pipe over curl:
 
-    curl -fsSL https://raw.githubusercontent.com/engels74/arrsenal-of-scripts/refs/heads/main/miscellaneous/claude/claude-diag.py | python3 -
+    curl -fsSL https://raw.githubusercontent.com/edbfi/arrsenal-of-scripts/refs/heads/main/miscellaneous/claude/claude-diag.py | python3 -
 
 See --help for flags.
 """
@@ -35,7 +35,7 @@ type Redact = Callable[[object | None], str]
 
 __version__ = "0.1.0"
 SCRIPT_URL = (
-    "https://raw.githubusercontent.com/engels74/arrsenal-of-scripts/refs/heads/"
+    "https://raw.githubusercontent.com/edbfi/arrsenal-of-scripts/refs/heads/"
     "main/miscellaneous/claude/claude-diag.py"
 )
 PASTEMYST_API_URL = "https://paste.myst.rs/api/v2/paste"
