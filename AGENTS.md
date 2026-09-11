@@ -6,7 +6,9 @@ repository.
 ## Repository shape
 
 Independent, self-contained sysadmin scripts — not a package. No build system, no root
-dependency manifest, no CI (`.github/` does not exist), no shared library. Several scripts
+dependency manifest and no shared library. `.github/workflows/ci.yml` now validates
+all shell syntax, ShellCheck errors, backup tests and diagnostic self-tests, plus
+production Python types. See `CI.md`. Several scripts
 document being run straight off `raw.githubusercontent.com/.../main/<path>`
 (`server-scripts/rclone/rclone-sync-script.sh:24`, `miscellaneous/hotio/hotio-support-script.sh:6`,
 `miscellaneous/claude/claude-diag.py:6`).
@@ -37,7 +39,7 @@ From `server-scripts/backup/python/`:
 uv run test_backup_script.py                                    # 63 tests, stdlib unittest
 uv run test_backup_script.py TestConfigLoading                  # one class
 uv run test_backup_script.py TestRotation.test_keeps_newest_n   # one test
-uvx basedpyright overengineered-backup-script.py                # gate: 0 errors
+uvx --from basedpyright==1.40.0 basedpyright                     # run at repo root; baseline guards new diagnostics
 ./overengineered-backup-script.py --dry-run --verbose           # full preflight preview
 ./overengineered-backup-script.py --print-default-config        # emit a commented example TOML
 ```
@@ -61,8 +63,10 @@ bash miscellaneous/hotio/hotio-support-script.sh --dry-run
 
 **Do not run `ruff check` or `ruff format`.** No ruff config is checked in and the code does not
 conform (verified: 41 findings; all three `.py` files would be reformatted). Match the surrounding
-style by hand. `basedpyright` on its defaults is the only gate with evidence of use in-tree
-(`# pyright: ignore[...]` suppressions).
+style by hand. `pyrightconfig.json` scopes basedpyright to the two production scripts; a reviewed
+baseline records 13 existing warnings under 1.40.0. New warnings/errors fail. The
+CI script reads its pinned checker version from `ci.yml`. Do not regenerate the
+baseline simply to accept new findings.
 
 ## Backup script
 
@@ -118,9 +122,8 @@ tests leak state into each other.
 - `claude-diag.py --publish` uploads the report to PasteMyst, publicly. Any new field added to the
   report must pass through `Redactor`, and `SELF_TEST_FIXTURE` should gain a case for any new
   secret shape; `--self-test` fails loudly on leaked substrings.
-- `arr-scripts/README.md` is stale: it documents `danishAudioRadarr.sh` / `danishAudioSonarr.sh`,
-  renamed in `ce53824` to `radarr-check-for-danish-audio.sh` / `sonarr-check-for-danish-audio.sh`.
-  Trust the filenames on disk; its Radarr/Sonarr connection setup steps are still current.
+- `arr-scripts/README.md` uses the current `radarr-check-for-danish-audio.sh` and
+  `sonarr-check-for-danish-audio.sh` filenames. Preserve the standalone download paths.
 - `fail2ban-monitor.sh` and `fail2ban-monitor.zsh` are separate implementations, not one script
   with two shebangs. A behavioural fix to one does not propagate; state which variant you changed.
 - Commit messages use Conventional Commits with the component as scope — `fix(backup):`,
@@ -128,7 +131,7 @@ tests leak state into each other.
 
 ## Reference files
 
-- `.agents/rules/python-314-pro.md` — the Python 3.14 style reference the `.py` files are written
+- `.agents/rules/python-3_14-core.md` — the Python 3.14 style reference the `.py` files are written
   against (PEP 695 generics, `TypeIs`, deferred annotations). Read before non-trivial Python work.
   Caveat: its `pyproject.toml` snippets for ruff/basedpyright are aspirational — none of that
   config exists here, so do not add it as part of an unrelated change.

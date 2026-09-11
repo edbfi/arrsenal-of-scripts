@@ -3,7 +3,7 @@
 
 Single-file, stdlib-only. Safe to pipe over curl:
 
-    curl -fsSL https://raw.githubusercontent.com/engels74/arrsenal-of-scripts/refs/heads/main/miscellaneous/claude/claude-diag.py | python3 -
+    curl -fsSL https://raw.githubusercontent.com/edbfi/arrsenal-of-scripts/refs/heads/main/miscellaneous/claude/claude-diag.py | python3 -
 
 See --help for flags.
 """
@@ -35,7 +35,7 @@ type Redact = Callable[[object | None], str]
 
 __version__ = "0.1.0"
 SCRIPT_URL = (
-    "https://raw.githubusercontent.com/engels74/arrsenal-of-scripts/refs/heads/"
+    "https://raw.githubusercontent.com/edbfi/arrsenal-of-scripts/refs/heads/"
     "main/miscellaneous/claude/claude-diag.py"
 )
 PASTEMYST_API_URL = "https://paste.myst.rs/api/v2/paste"
@@ -207,12 +207,13 @@ class Redactor:
         s = self.IPV4.sub(self._ip, s)
         s = self.URL_QS.sub(r"\1?[REDACTED:QUERYSTRING]", s)
         s = self.AUTH_HEADER.sub(r"\1\2[REDACTED]", s)
+        # Alias paths before a hostname matching the username breaks their syntax.
+        s = self._redact_paths(s)
         if len(self.hostname) > 2:
             s = s.replace(self.hostname, "[REDACTED:HOSTNAME]")
         if len(self.short_hostname) > 2 and self.short_hostname != self.hostname:
             s = re.sub(rf"\b{re.escape(self.short_hostname)}\b",
                        "[REDACTED:HOSTNAME]", s)
-        s = self._redact_paths(s)
         return s
 
     @property
@@ -1175,7 +1176,7 @@ def self_test() -> int:
     print(fixture)
     print("=== self-test fixture (redacted) ===")
     print(out)
-    context_failures = _self_test_context()
+    context_failures = _self_test_context() + _self_test_path_collisions()
     publish_failures = _self_test_publish()
     print("=== checks ===")
     if failures:
@@ -1197,6 +1198,28 @@ def self_test() -> int:
     )
     print("RESULT:", "OK" if ok else "FAIL")
     return 0 if ok else 1
+
+
+def _self_test_path_collisions() -> list[str]:
+    r = Redactor()
+    r.hostname = PurePosixPath(r.home_path).name
+    r.short_hostname = r.hostname
+    cases = [
+        (f"{r.home_path}/.claude/settings.json", "~/.claude/settings.json"),
+        (
+            f"{r.home_path}/.claude/projects/-home-{r.hostname}-project/session.jsonl",
+            "~/.claude/projects/[PROJECT-1]/session.jsonl",
+        ),
+        (f"{r.cwd_path}/CLAUDE.md", "$PWD/CLAUDE.md"),
+    ]
+    failures: list[str] = []
+    for raw, expected in cases:
+        actual = r(raw)
+        if actual != expected or r(actual) != expected:
+            failures.append("hostname/username collision damaged a path alias")
+    if len(r.hostname) > 2 and r(r.hostname) != "[REDACTED:HOSTNAME]":
+        failures.append("hostname/username collision stopped hostname redaction")
+    return failures
 
 
 def _fake_claude_script() -> str:

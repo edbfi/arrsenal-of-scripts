@@ -3,7 +3,7 @@
 # A guided helper to produce a great Hotio support request
 #
 # How to run (single command):
-#   curl -4fsSL https://raw.githubusercontent.com/engels74/arrsenal-of-scripts/refs/heads/main/miscellaneous/hotio/hotio-support-script.sh | bash
+#   curl -4fsSL https://raw.githubusercontent.com/edbfi/arrsenal-of-scripts/refs/heads/main/miscellaneous/hotio/hotio-support-script.sh | bash
 #
 # Quick dry-run locally:
 #   bash miscellaneous/hotio/hotio-support-script.sh --dry-run
@@ -434,7 +434,7 @@ choose_one() { # choose_one "Prompt" option1 option2 ...
 # Welcome Screen #1: Pre-execution
 show_pre_execution_welcome() {
   clear_screen
-  local repo_url="https://github.com/engels74/arrsenal-of-scripts/blob/main/miscellaneous/hotio/hotio-support-script.sh"
+  local repo_url="https://github.com/edbfi/arrsenal-of-scripts/blob/main/miscellaneous/hotio/hotio-support-script.sh"
   gum_run style \
     --border double --margin "1 2" --padding "1 3" \
     --foreground "201" --border-foreground "201" \

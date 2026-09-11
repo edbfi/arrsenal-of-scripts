@@ -18,10 +18,15 @@ This is a collection of scripts I’ve thrown together for managing servers, aut
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/engels74/arrsenal-of-scripts.git
+   git clone https://github.com/edbfi/arrsenal-of-scripts.git
    ```
 2. Explore the scripts in the folders and pick what you need.
-3. Run or adapt them to suit your setup.
+3. Review each script's configuration and adapt it to your setup before running it.
+
+See [CI.md](CI.md) for checks and manual review requirements. Hostnames, usernames,
+paths, and service defaults are preserved examples and may not match your system.
+The legacy Hotio migration helper retains its original `hotio/` and `engels74/`
+image matching; it is not an edbfi image-namespace migration tool.
 
 ## ⚠️ Disclaimer
 
