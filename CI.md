@@ -29,9 +29,10 @@ Renovate does not yet maintain uv script lockfiles, so no unmaintainable script
 lockfile is introduced as an apparent merge guarantee. Runtime dependency and
 live service compatibility remain manual validation requirements.
 
-The shared dispatch guard and `ci / required` gate reject invalid explicit PR
-SHAs, failed, cancelled, missing or skipped prerequisites. All validation tokens
-are read-only; action references use full version tags. Merges require manual
-review of the exact head and base, full diff, authors and DCO sign-offs, and all
-expected CI jobs. No branch protections or repository rulesets are configured.
-Automerge stays off.
+The shared dispatch guard and aggregate gate verify explicit PR and final commit
+SHAs and reject missing, skipped or failed prerequisites. Renovate updates merge
+unattended after every required job passes on the current revision, including
+majors and shared-policy updates. The checked action verifies genuine author
+sign-offs and dispatches exact-commit final CI. No dashboard approvals, branch
+protections or rulesets are configured; native GitHub automerge stays disabled.
+Other changes retain full manual review and the maintainer's ghmerge process.
