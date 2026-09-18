@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   guard:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: edbfi/automation/actions/dispatch-guard@v2.0.0
@@ -36,7 +36,7 @@ jobs:
           expected-default-sha: ${{ inputs.expected-default-sha }}
   scripts:
     needs: guard
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     env:
       # renovate: datasource=pypi depName=basedpyright
@@ -75,7 +75,7 @@ jobs:
     name: ci / required
     if: always()
     needs: [guard, scripts]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: edbfi/automation/actions/dispatch-guard@v2.0.0
