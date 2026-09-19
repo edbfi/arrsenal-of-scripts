@@ -29,7 +29,7 @@ Renovate does not yet maintain uv script lockfiles, so no unmaintainable script
 lockfile is introduced as an apparent merge guarantee. Runtime dependency and
 live service compatibility remain manual validation requirements.
 
-Shared actions, workflows and presets use immutable `v3.0.0` references.
+Shared actions, workflows and presets use immutable `v3.0.1` references.
 Renovate is the sole ongoing dependency merge owner. Direct automerge remains
 explicitly disabled, including matching package rules, until the hosted rollout
 proves native Renovate operation behind complete required CI. The legacy Actions
