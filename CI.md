@@ -29,10 +29,18 @@ Renovate does not yet maintain uv script lockfiles, so no unmaintainable script
 lockfile is introduced as an apparent merge guarantee. Runtime dependency and
 live service compatibility remain manual validation requirements.
 
-The shared dispatch guard and aggregate gate verify explicit PR and final commit
-SHAs and reject missing, skipped or failed prerequisites. Renovate updates merge
-unattended after every required job passes on the current revision, including
-majors and shared-policy updates. The checked action verifies genuine author
-sign-offs and dispatches exact-commit final CI. No dashboard approvals, branch
-protections or rulesets are configured; native GitHub automerge stays disabled.
-Other changes retain full manual review and the maintainer's ghmerge process.
+Shared actions, workflows and presets use immutable `v3.0.1` references.
+Renovate is the sole ongoing dependency merge owner. Direct automerge remains
+explicitly disabled, including matching package rules, until the hosted rollout
+proves native Renovate operation behind complete required CI. The legacy Actions
+merger and its comment commands are retired.
+
+The separate PR policy workflow verifies Conventional Commit titles, genuine
+matching author sign-offs, Renovate provenance, holds, outstanding review requests
+and unresolved changes requests. Require its actual emitted policy context alongside
+all existing application/content checks, pinned to GitHub Actions, with strict
+up-to-date branch protection. Preserve stronger review requirements. Explicit CI
+dispatches do not substitute for a missing metadata policy result. Review exact
+head/base, full diffs and all required results before a bootstrap merge, then
+verify resulting default-branch CI. Repository-specific updater ownership and
+manual publication or delivery controls remain unchanged.
