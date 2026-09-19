@@ -9,15 +9,9 @@
       "/^server-scripts/backup/python/.*\\.py$/"
     ]
   },
-  "automerge": false,
+  "automerge": true,
   "platformAutomerge": false,
   "ignoreTests": false,
-  "packageRules": [
-    {
-      "matchPackageNames": [
-        "*"
-      ],
-      "automerge": false
-    }
-  ]
+  "automergeStrategy": "rebase",
+  "automergeType": "pr"
 }
