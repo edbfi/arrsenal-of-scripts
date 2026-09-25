@@ -1,17 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>edbfi/automation//default.json#v3.0.1",
+    "github>edbfi/automation//default.json#v4.0.0",
+    "github>edbfi/automation//automerge.json#v4.0.0",
     "customManagers:githubActionsVersions"
   ],
   "pep723": {
     "managerFilePatterns": [
       "/^server-scripts/backup/python/.*\\.py$/"
     ]
-  },
-  "automerge": true,
-  "platformAutomerge": false,
-  "ignoreTests": false,
-  "automergeStrategy": "rebase",
-  "automergeType": "pr"
+  }
 }
