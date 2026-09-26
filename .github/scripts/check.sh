@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Read the same pinned version locally that Renovate maintains for CI.
-if [[ -z "${BASEDPYRIGHT_VERSION:-}" ]]; then
-  BASEDPYRIGHT_VERSION=$(python3 - <<'PYTHON'
-from pathlib import Path
-import re
-workflow = Path(".github/workflows/ci.yml").read_text()
-match = re.search(r"BASEDPYRIGHT_VERSION: '([0-9.]+)'", workflow)
-assert match, "Missing basedpyright version in ci.yml"
-print(match[1])
-PYTHON
-  )
-fi
+# Pin the local checker; callers may override it explicitly.
+BASEDPYRIGHT_VERSION="${BASEDPYRIGHT_VERSION:-1.40.1}"
 while IFS= read -r -d '' script; do
   case "$script" in
     *.zsh) zsh -n "$script" ;;
