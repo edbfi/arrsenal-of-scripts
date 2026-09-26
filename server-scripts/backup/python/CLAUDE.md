@@ -26,5 +26,5 @@ Removing a key: add `(section, key)` with an upgrade hint to `_REMOVED_TOML_KEYS
 
 ## Tests
 
-- `TestRestoreRoundTrip`, `TestCreateBackupEndToEnd` and `TestPostQuantumRoundTrip` skip themselves without age, GNU tar or `age-keygen -pq`, so a green local run can be partial. `.github/scripts/check.sh` refuses to run without those tools.
+- `TestRestoreRoundTrip`, `TestCreateBackupEndToEnd` and `TestPostQuantumRoundTrip` skip themselves without age, GNU tar or `age-keygen -pq`, so a green local run can be partial.
 - The test file is excluded from basedpyright (`pyrightconfig.json`); its type errors come from the dynamic import and are not to be fixed.

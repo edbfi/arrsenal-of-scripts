@@ -16,7 +16,7 @@ Independent single-file scripts, not a package: no build system, no root manifes
 
 ## Checks
 
-Full CI suite, from the repo root: `bash .github/scripts/check.sh`. It needs Python 3.14, uv, ShellCheck, zsh, GNU tar as `tar`, and age >= 1.3 (`age-keygen -pq`).
+Run from the repo root. The checks need Python 3.14, uv, ShellCheck, zsh, GNU tar, and age >= 1.3 (`age-keygen -pq`).
 
 | Target | Command (repo root) |
 | --- | --- |
@@ -24,12 +24,9 @@ Full CI suite, from the repo root: `bash .github/scripts/check.sh`. It needs Pyt
 | Backup tests (all) | `python3 server-scripts/backup/python/test_backup_script.py` |
 | One class / one test | append `TestFormatHelpers` / `TestFormatHelpers.test_format_bytes` |
 | claude-diag | `python3 miscellaneous/claude/claude-diag.py --self-test` (must print `RESULT: OK`) |
-| Types | `uvx --from "basedpyright==<BASEDPYRIGHT_VERSION from ci.yml>" basedpyright --warnings` |
+| Types | `uvx --from "basedpyright==1.40.1" basedpyright --warnings` |
 
-- `check.sh` asserts `tar --version` says GNU tar. On macOS the default bsdtar fails it even though the backup script itself finds Homebrew `gtar`; put GNU tar first on `PATH` as `tar` to run the suite locally.
-- `check.sh` only lints scripts in the git index (`git ls-files`); an unstaged new script is silently skipped.
 - basedpyright checks only the two files in `pyrightconfig.json` `include`, and `--warnings` makes warnings fatal. Existing warnings are recorded in `.basedpyright/baseline.json`: delete entries as you fix them, never regenerate it to absorb new findings. Fix the code or add a scoped `# pyright: ignore[<rule>]`.
-- CI runs `git diff --exit-code HEAD` after the checks, so any tracked file the checks rewrite must be committed.
 
 ## Python: where `.agents/rules/python-3_14-core.md` does not apply
 
@@ -53,5 +50,4 @@ Use that rule for language and typing style. Its project and tooling sections co
 - `.agents/rules/python-3_14-core.md`: Python 3.14 typing and syntax style for basedpyright `recommended`. Read before non-trivial Python work, with the table above.
 - `arr-scripts/README.md`: Radarr/Sonarr Custom Script wiring for the Danish-audio scripts. Read when changing those scripts.
 
-The local checker pins `BASEDPYRIGHT_VERSION` in `.github/scripts/check.sh`; override the environment variable to test another version.
 Use Conventional Commit titles with a component scope and matching author sign-offs.
