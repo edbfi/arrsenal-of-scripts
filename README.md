@@ -23,7 +23,7 @@ This is a collection of scripts I’ve thrown together for managing servers, aut
 2. Explore the scripts in the folders and pick what you need.
 3. Review each script's configuration and adapt it to your setup before running it.
 
-See [CI.md](CI.md) for checks and manual review requirements. Hostnames, usernames,
+Run `bash .github/scripts/check.sh` locally and review changes manually. Hostnames, usernames,
 paths, and service defaults are preserved examples and may not match your system.
 The legacy Hotio migration helper retains its original `hotio/` and `engels74/`
 image matching; it is not an edbfi image-namespace migration tool.
