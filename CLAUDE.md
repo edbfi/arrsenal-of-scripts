@@ -28,7 +28,6 @@ Full CI suite, from the repo root: `bash .github/scripts/check.sh`. It needs Pyt
 
 - `check.sh` asserts `tar --version` says GNU tar. On macOS the default bsdtar fails it even though the backup script itself finds Homebrew `gtar`; put GNU tar first on `PATH` as `tar` to run the suite locally.
 - `check.sh` only lints scripts in the git index (`git ls-files`); an unstaged new script is silently skipped.
-- The basedpyright version exists only as `BASEDPYRIGHT_VERSION` in `.github/workflows/ci.yml` (Renovate-managed); `check.sh` parses it from there. Change it there, nowhere else.
 - basedpyright checks only the two files in `pyrightconfig.json` `include`, and `--warnings` makes warnings fatal. Existing warnings are recorded in `.basedpyright/baseline.json`: delete entries as you fix them, never regenerate it to absorb new findings. Fix the code or add a scoped `# pyright: ignore[<rule>]`.
 - CI runs `git diff --exit-code HEAD` after the checks, so any tracked file the checks rewrite must be committed.
 
@@ -49,10 +48,10 @@ Use that rule for language and typing style. Its project and tooling sections co
 
 ## Commits
 
-Conventional Commits with the component as scope: `fix(backup):`, `feat(backup)!:`, `fix(ci):`, `chore(deps):`. PRs are gated by `.github/workflows/pr-policy.yml` (Conventional Commit title, author sign-off). Renovate owns dependency and action version bumps.
-
 ## Reference
 
-- `CI.md`: what CI checks, baseline policy, Renovate and merge policy. Read before changing `.github/`, `renovate.json`, `pyrightconfig.json` or the baseline.
 - `.agents/rules/python-3_14-core.md`: Python 3.14 typing and syntax style for basedpyright `recommended`. Read before non-trivial Python work, with the table above.
 - `arr-scripts/README.md`: Radarr/Sonarr Custom Script wiring for the Danish-audio scripts. Read when changing those scripts.
+
+The local checker pins `BASEDPYRIGHT_VERSION` in `.github/scripts/check.sh`; override the environment variable to test another version.
+Use Conventional Commit titles with a component scope and matching author sign-offs.
