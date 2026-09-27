@@ -9,7 +9,7 @@ This is a collection of scripts I’ve thrown together for managing servers, aut
 ## 📂 What You'll Find
 
 - **'Arr' App Scripts**: Odd scripts for the "Servarr" app suite
-- **Server Management Tools**: Odd scripts for my personal server management
+- **Server Management Tools**: Odd scripts for my personal server management, including [temporary sudo access for AI coding agents](server-scripts/sudo/ai-agent-sudo.zsh).
 - **Miscellaneous Scripts**: Random scripts I found useful or fun to create.
 - **Other Tools**: Whatever else made sense to throw in here.
 
