@@ -2,15 +2,19 @@
 # ai-agent-sudo.zsh
 # Temporary sudoers helper for AI coding agents on macOS and Linux (Ubuntu/sudo-rs).
 # It installs a sudoers.d drop-in, validates it with visudo, and optionally
-# schedules automatic removal (launchd on macOS, systemd-run on Linux, with a
-# root background-sleep fallback on either).
+# schedules automatic removal: a launchd daemon on macOS or a persistent systemd
+# timer on Linux, with a root background poller as the fallback on either.
+# The drop-in records its expiry, and the removal job re-checks it, so expiry
+# survives reboots and sleep. With classic sudo (not sudo-rs) the rule also
+# carries NOTAFTER, so sudo itself stops honoring it at expiry.
 
 emulate -L zsh
 setopt NO_UNSET PIPE_FAIL EXTENDED_GLOB
 unsetopt BEEP
+zmodload zsh/datetime
 
 typeset -gr SCRIPT_NAME="${0:t}"
-typeset -gr VERSION="1.0.0"
+typeset -gr VERSION="1.1.0"
 
 typeset -gr OS_NAME="$(uname -s)"
 
@@ -35,14 +39,37 @@ typeset -g SAFE_TARGET_USER=""
 typeset -g SUDOERS_FILE=""
 typeset -g UNIT=""
 typeset -g LAUNCHD_PLIST=""
+typeset -g SYSTEMD_SERVICE_FILE=""
+typeset -g SYSTEMD_TIMER_FILE=""
 typeset -g TMPFILE=""
 
 typeset -ga ALLOW_SPECS
 typeset -g DURATION_RAW="${AI_SUDO_DEFAULT_DURATION:-30m}"
 typeset -gi UNTIL_DISABLED=0
+typeset -g EXPIRES_EPOCH=""
+typeset -gi USE_NOTAFTER=0
 
 typeset -gA STATE
 STATE=()
+
+# ---------- Removal job ----------
+
+# First line of every drop-in. The removal job only deletes a drop-in whose
+# recorded expiry has passed, so a stale job can never cut a newer grant short.
+typeset -gr EXPIRY_MARKER="# ai-agent-sudo expires_epoch="
+
+# Root-side removal job, run as: sh -c "$REMOVAL_SCRIPT" name <sudoers-file> <launchd|systemd|none> [label]
+# It keeps a grant that has not expired yet, deletes an expired one, and then
+# removes its own launchd daemon or systemd units. Kept on one line with no
+# single quotes, backslashes or XML metacharacters so it embeds verbatim in a
+# plist and, with $ and % doubled, in a systemd ExecStart. The directories must
+# match LAUNCHD_DIR and SYSTEMD_UNIT_DIR.
+typeset -gr REMOVAL_SCRIPT='PATH=/usr/bin:/bin:/usr/sbin:/sbin; f="$1"; if [ -e "$f" ]; then exp=$(sed -n "s/^# ai-agent-sudo expires_epoch=//p" "$f" | head -n 1); case "$exp" in ""|*[!0-9]*) ;; *) if [ "$(date +%s)" -lt "$exp" ]; then exit 0; fi; rm -f -- "$f"; logger -t ai-agent-sudo "removed expired $f" ;; esac; fi; case "$2" in launchd) rm -f -- "/Library/LaunchDaemons/$3.plist"; launchctl bootout "system/$3" ;; systemd) systemctl disable --now "$3.timer"; rm -f -- "/etc/systemd/system/$3.timer" "/etc/systemd/system/$3.service"; systemctl daemon-reload ;; esac'
+
+# Root-side fallback poller, run as: sh -c "$FALLBACK_SCRIPT" name <removal-script> <sudoers-file> <expires-epoch>
+# It detaches, ignores terminal hangups and Ctrl-C, and polls the wall clock so
+# suspend time counts toward expiry.
+typeset -gr FALLBACK_SCRIPT='trap "" HUP INT QUIT; ( while [ -e "$2" ] && [ "$(date +%s)" -lt "$3" ]; do sleep 30; done; /bin/sh -c "$1" ai-agent-sudo-remove "$2" none ) </dev/null >/dev/null 2>&1 &'
 
 # ---------- Paths ----------
 
@@ -64,12 +91,14 @@ cmd_path() {
 typeset -g SUDO_CMD="$(cmd_path /usr/bin/sudo sudo)"
 typeset -g VISUDO_CMD="$(cmd_path /usr/sbin/visudo visudo)"
 typeset -g INSTALL_CMD="$(cmd_path /usr/bin/install install)"
-typeset -g SYSTEMD_RUN_CMD="$(cmd_path /usr/bin/systemd-run systemd-run)"
 typeset -g SYSTEMCTL_CMD="$(cmd_path /usr/bin/systemctl systemctl)"
 typeset -g RM_CMD="$(cmd_path /bin/rm rm)"
 typeset -g DATE_CMD="$(cmd_path /usr/bin/date date)"
 typeset -g MKTEMP_CMD="$(cmd_path /usr/bin/mktemp mktemp)"
 typeset -g LAUNCHCTL_CMD="$(cmd_path /bin/launchctl launchctl)"
+
+typeset -gr LAUNCHD_DIR="/Library/LaunchDaemons"
+typeset -gr SYSTEMD_UNIT_DIR="/etc/systemd/system"
 
 typeset -g STATE_DIR="${AI_SUDO_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/ai-agent-sudo}"
 typeset -g STATE_FILE="${STATE_DIR}/state"
@@ -81,6 +110,7 @@ typeset -g C_RESET="" C_BOLD="" C_DIM="" C_RED="" C_GREEN="" C_YELLOW="" C_BLUE=
 
 setup_colors() {
   if (( COLOR_OFF )) || [[ -n "${NO_COLOR:-}" ]] || [[ ! -t 1 ]]; then
+    C_RESET="" C_BOLD="" C_DIM="" C_RED="" C_GREEN="" C_YELLOW="" C_BLUE="" C_CYAN=""
     return 0
   fi
 
@@ -100,8 +130,10 @@ log_msg() {
   local level="$1"
   shift
 
+  local stamp
+  strftime -s stamp '%Y-%m-%d %H:%M:%S%z' "$EPOCHSECONDS"
   mkdir -p -- "$STATE_DIR" 2>/dev/null || true
-  print -r -- "$($DATE_CMD '+%Y-%m-%d %H:%M:%S%z' 2>/dev/null) [$level] $*" >> "$LOG_FILE" 2>/dev/null || true
+  print -r -- "$stamp [$level] $*" >> "$LOG_FILE" 2>/dev/null || true
 }
 
 say() {
@@ -116,7 +148,12 @@ say() {
 info()    { say "ℹ" "$C_BLUE" "$@"; log_msg INFO "$*"; }
 success() { say "✓" "$C_GREEN" "$@"; log_msg INFO "$*"; }
 warn()    { say "⚠" "$C_YELLOW" "$@"; log_msg WARN "$*"; }
-error()   { say "✕" "$C_RED" "$@"; log_msg ERROR "$*"; }
+
+# Errors go to stderr, even with --quiet, so they are never swallowed by $(...).
+error() {
+  print -r -- "${C_RED}✕${C_RESET} $*" >&2
+  log_msg ERROR "$*"
+}
 
 die() {
   error "$@"
@@ -125,9 +162,12 @@ die() {
 
 banner() {
   (( QUIET )) && return 0
+  local title="AI Agent Temporary Sudo"
+  local ver="v${VERSION}"
+  local pad=$(( 46 - ${#title} - ${#ver} - 2 ))
   print -r -- ""
   print -r -- "${C_CYAN}╭──────────────────────────────────────────────╮${C_RESET}"
-  print -r -- "${C_CYAN}│${C_RESET} ${C_BOLD}AI Agent Temporary Sudo${C_RESET} ${C_DIM}v${VERSION}${C_RESET}             ${C_CYAN}│${C_RESET}"
+  print -r -- "${C_CYAN}│${C_RESET} ${C_BOLD}${title}${C_RESET} ${C_DIM}${ver}${C_RESET}${(l:pad:):-}${C_CYAN}│${C_RESET}"
   print -r -- "${C_CYAN}╰──────────────────────────────────────────────╯${C_RESET}"
 }
 
@@ -201,17 +241,23 @@ refresh_context() {
   [[ -n "$TARGET_USER" ]] || TARGET_USER="$(default_target_user)"
   validate_target_user "$TARGET_USER"
 
-  TARGET_UID="$(id -u "$TARGET_USER" 2>/dev/null || print -r -- unknown)"
+  TARGET_UID="$(id -u "$TARGET_USER" 2>/dev/null)" || die "No such local user: $TARGET_USER"
   SAFE_TARGET_USER="$(safe_unit_part "$TARGET_USER")"
-  SUDOERS_FILE="/etc/sudoers.d/90-ai-agent-temp-${TARGET_USER}"
+  # sudo and sudo-rs silently skip sudoers.d files whose names contain '.', so
+  # keep the file name to characters they read.
+  SUDOERS_FILE="/etc/sudoers.d/90-ai-agent-temp-${TARGET_USER//[^A-Za-z0-9_-]/_}"
 
   if is_macos; then
     # launchd label (reverse-DNS style) doubles as the state 'unit' value.
     UNIT="com.ai-agent-sudo.remove.${SAFE_TARGET_USER}.${TARGET_UID}"
-    LAUNCHD_PLIST="/Library/LaunchDaemons/${UNIT}.plist"
+    LAUNCHD_PLIST="${LAUNCHD_DIR}/${UNIT}.plist"
+    SYSTEMD_SERVICE_FILE=""
+    SYSTEMD_TIMER_FILE=""
   else
     UNIT="ai-agent-temp-sudo-remove-${SAFE_TARGET_USER}-${TARGET_UID}"
     LAUNCHD_PLIST=""
+    SYSTEMD_SERVICE_FILE="${SYSTEMD_UNIT_DIR}/${UNIT}.service"
+    SYSTEMD_TIMER_FILE="${SYSTEMD_UNIT_DIR}/${UNIT}.timer"
   fi
 
   STATE_FILE="${STATE_DIR}/state-${SAFE_TARGET_USER}-${TARGET_UID}"
@@ -241,9 +287,10 @@ save_state() {
     print -r -- "target_user=$TARGET_USER"
     print -r -- "sudoers_file=$SUDOERS_FILE"
     print -r -- "unit=$UNIT"
-    print -r -- "enabled_epoch=$($DATE_CMD +%s)"
+    print -r -- "enabled_epoch=$EPOCHSECONDS"
     print -r -- "expires_epoch=$expires_epoch"
     print -r -- "mode=$mode"
+    print -r -- "notafter=$USE_NOTAFTER"
   } >| "$STATE_FILE"
 }
 
@@ -297,8 +344,11 @@ duration_to_minutes() {
     n="${raw%d}"
     mult=1440
   else
-    die "Invalid duration: '$1'. Use examples like 15m, 30m, 2h, or 1d."
+    die "Invalid duration: '$1'. Use examples like 30m, 1h, 3h, or 1d."
   fi
+
+  n="${n##0##}"
+  (( ${#n} <= 6 )) || die "Duration is too large. Maximum is 7 days."
 
   local minutes=$(( n * mult ))
   (( minutes > 0 )) || die "Duration must be greater than zero."
@@ -319,20 +369,57 @@ format_duration() {
   fi
 }
 
+format_remaining() {
+  local seconds="$1"
+  local minutes=$(( (seconds + 59) / 60 ))
+
+  if (( minutes >= 60 )); then
+    print -r -- "$(( minutes / 60 ))h $(( minutes % 60 ))m"
+  else
+    print -r -- "${minutes}m"
+  fi
+}
+
 date_human() {
   local epoch="${1:-}"
-  [[ -n "$epoch" ]] || { print -r -- "-"; return 0; }
+  [[ "$epoch" == <-> ]] || { print -r -- "-"; return 0; }
 
-  if is_macos; then
-    "$DATE_CMD" -r "$epoch" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || print -r -- "$epoch"
-  else
-    "$DATE_CMD" -d "@$epoch" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || print -r -- "$epoch"
-  fi
+  strftime '%Y-%m-%d %H:%M:%S %Z' "$epoch"
+}
+
+xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  print -r -- "$s"
+}
+
+# Classic sudo enforces NOTAFTER itself; sudo-rs rejects the option.
+sudo_supports_notafter() {
+  [[ "$("$SUDO_CMD" -V 2>/dev/null | head -n 1)" == "Sudo version "* ]]
+}
+
+systemd_available() {
+  [[ -d /run/systemd/system && -x "$SYSTEMCTL_CMD" ]]
+}
+
+is_invoking_user() {
+  (( EUID != 0 )) && [[ "$TARGET_USER" == "$(id -un 2>/dev/null)" ]]
 }
 
 build_sudoers_rule() {
   local joined="${(j:, :)ALLOW_SPECS}"
-  print -r -- "$TARGET_USER ALL=(root) NOPASSWD: $joined"
+  local options=""
+
+  if (( USE_NOTAFTER )) && [[ -n "$EXPIRES_EPOCH" ]]; then
+    local notafter
+    TZ=UTC strftime -s notafter '%Y%m%d%H%M%SZ' "$EXPIRES_EPOCH"
+    options="NOTAFTER=${notafter} "
+  fi
+
+  print -r -- "${EXPIRY_MARKER}${EXPIRES_EPOCH:-never}"
+  print -r -- "$TARGET_USER ALL=(root) ${options}NOPASSWD: $joined"
 }
 
 validate_allow_specs() {
@@ -353,9 +440,19 @@ cancel_existing_timer_quietly() {
 
   if is_macos; then
     "$SUDO_CMD" "$LAUNCHCTL_CMD" bootout "system/${unit}" >/dev/null 2>&1 || true
-    "$SUDO_CMD" "$RM_CMD" -f -- "/Library/LaunchDaemons/${unit}.plist" >/dev/null 2>&1 || true
-  else
+    "$SUDO_CMD" "$RM_CMD" -f -- "${LAUNCHD_DIR}/${unit}.plist" >/dev/null 2>&1 || true
+  elif systemd_available; then
+    "$SUDO_CMD" "$SYSTEMCTL_CMD" disable --now "${unit}.timer" >/dev/null 2>&1 || true
+    # Also stops transient units left by v1.0.0, which used systemd-run.
     "$SUDO_CMD" "$SYSTEMCTL_CMD" stop "${unit}.timer" "${unit}.service" >/dev/null 2>&1 || true
+
+    local service_file="${SYSTEMD_UNIT_DIR}/${unit}.service"
+    local timer_file="${SYSTEMD_UNIT_DIR}/${unit}.timer"
+    if [[ -e "$service_file" || -e "$timer_file" ]]; then
+      "$SUDO_CMD" "$RM_CMD" -f -- "$service_file" "$timer_file" >/dev/null 2>&1 || true
+      "$SUDO_CMD" "$SYSTEMCTL_CMD" daemon-reload >/dev/null 2>&1 || true
+    fi
+
     "$SUDO_CMD" "$SYSTEMCTL_CMD" reset-failed "${unit}.timer" "${unit}.service" >/dev/null 2>&1 || true
   fi
 }
@@ -364,7 +461,6 @@ install_sudoers_rule() {
   local rule="$(build_sudoers_rule)"
 
   if (( DRY_RUN )); then
-    banner
     info "Dry run only. Would install this sudoers rule:"
     print -r -- ""
     print -r -- "$rule"
@@ -392,38 +488,26 @@ install_sudoers_rule() {
 }
 
 schedule_removal_fallback() {
-  local minutes="$1"
-  local seconds=$(( minutes * 60 ))
+  local expires_epoch="$1"
 
-  warn "Using a root background sleep as the removal fallback."
-  warn "If the machine reboots or the process is killed, run '$SCRIPT_NAME disable' manually."
+  warn "Using a root background poller as the removal fallback."
+  warn "It does not survive a reboot; after one, run '$SCRIPT_NAME disable' manually."
 
-  # SUDOERS_FILE is generated from a validated local username, so this simple
-  # single-quoted shell fragment is safe for the controlled path we use.
-  "$SUDO_CMD" /bin/sh -c "sleep $seconds; rm -f -- '$SUDOERS_FILE'" >/dev/null 2>&1 &!
-
-  return 0
+  run_sudo /bin/sh -c "$FALLBACK_SCRIPT" ai-agent-sudo-fallback \
+    "$REMOVAL_SCRIPT" "$SUDOERS_FILE" "$expires_epoch" >/dev/null 2>&1
 }
 
 schedule_removal_launchd() {
-  local expires_epoch="$1"
   local label="$UNIT"
   local plist="$LAUNCHD_PLIST"
-
-  # Calendar components of the expiry moment (BSD date). Base-10 arithmetic
-  # strips the leading zeros that would otherwise produce invalid plist ints.
-  local cal_min cal_hour cal_day cal_mon
-  cal_min=$(( 10#$("$DATE_CMD" -r "$expires_epoch" '+%M') ))
-  cal_hour=$(( 10#$("$DATE_CMD" -r "$expires_epoch" '+%H') ))
-  cal_day=$(( 10#$("$DATE_CMD" -r "$expires_epoch" '+%d') ))
-  cal_mon=$(( 10#$("$DATE_CMD" -r "$expires_epoch" '+%m') ))
 
   local tmpl="${TMPDIR:-/tmp}"
   local plist_tmp
   plist_tmp="$("$MKTEMP_CMD" "${tmpl%/}/ai-agent-sudo-plist.XXXXXX")" || return 1
 
-  # Paths embedded below come from a validated username, so they are safe to
-  # single-quote in the removal command and contain no XML metacharacters.
+  # RunAtLoad covers expiry during a reboot; the 30s poll covers sleep and
+  # clock changes. The job itself decides whether the grant has expired.
+  # Label and paths come from a validated username and hold no XML metacharacters.
   cat >| "$plist_tmp" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -435,30 +519,19 @@ schedule_removal_launchd() {
     <array>
         <string>/bin/sh</string>
         <string>-c</string>
-        <string>rm -f -- '${SUDOERS_FILE}'; rm -f -- '${plist}'; /bin/launchctl bootout system/${label}</string>
+        <string>$(xml_escape "$REMOVAL_SCRIPT")</string>
+        <string>ai-agent-sudo-remove</string>
+        <string>${SUDOERS_FILE}</string>
+        <string>launchd</string>
+        <string>${label}</string>
     </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Month</key>
-        <integer>${cal_mon}</integer>
-        <key>Day</key>
-        <integer>${cal_day}</integer>
-        <key>Hour</key>
-        <integer>${cal_hour}</integer>
-        <key>Minute</key>
-        <integer>${cal_min}</integer>
-    </dict>
     <key>RunAtLoad</key>
-    <false/>
-    <key>AbandonProcessGroup</key>
     <true/>
+    <key>StartInterval</key>
+    <integer>30</integer>
 </dict>
 </plist>
 PLIST
-
-  # Replace any previous daemon before installing the fresh one.
-  "$SUDO_CMD" "$LAUNCHCTL_CMD" bootout "system/${label}" >/dev/null 2>&1 || true
-  "$SUDO_CMD" "$RM_CMD" -f -- "$plist" >/dev/null 2>&1 || true
 
   if ! run_sudo "$INSTALL_CMD" -o root -g "$ROOT_GROUP" -m 0644 "$plist_tmp" "$plist"; then
     rm -f -- "$plist_tmp" 2>/dev/null || true
@@ -468,7 +541,67 @@ PLIST
 
   # Load it (modern bootstrap API, with legacy load -w as backup).
   if ! "$SUDO_CMD" "$LAUNCHCTL_CMD" bootstrap system "$plist" >/dev/null 2>&1; then
-    "$SUDO_CMD" "$LAUNCHCTL_CMD" load -w "$plist" >/dev/null 2>&1 || return 1
+    if ! "$SUDO_CMD" "$LAUNCHCTL_CMD" load -w "$plist" >/dev/null 2>&1; then
+      "$SUDO_CMD" "$RM_CMD" -f -- "$plist" >/dev/null 2>&1 || true
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
+schedule_removal_systemd() {
+  local expires_epoch="$1"
+
+  local on_calendar
+  TZ=UTC strftime -s on_calendar '%Y-%m-%d %H:%M:%S UTC' "$expires_epoch"
+
+  # systemd expands $VAR and %-specifiers in ExecStart, so double them.
+  local exec_script="${${REMOVAL_SCRIPT//\$/\$\$}//\%/%%}"
+
+  local tmpl="${TMPDIR:-/tmp}"
+  local service_tmp timer_tmp
+  service_tmp="$("$MKTEMP_CMD" "${tmpl%/}/ai-agent-sudo-service.XXXXXX")" || return 1
+  timer_tmp="$("$MKTEMP_CMD" "${tmpl%/}/ai-agent-sudo-timer.XXXXXX")" || { rm -f -- "$service_tmp"; return 1; }
+
+  cat >| "$service_tmp" <<SERVICE
+[Unit]
+Description=Remove temporary AI agent sudo rule for ${TARGET_USER}
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '${exec_script}' ai-agent-sudo-remove ${SUDOERS_FILE} systemd ${UNIT}
+SERVICE
+
+  # Persistent units in /etc survive a reboot, unlike systemd-run transient
+  # ones. OnBootSec re-runs the job after boot in case expiry passed while down.
+  cat >| "$timer_tmp" <<TIMER
+[Unit]
+Description=Expire temporary AI agent sudo rule for ${TARGET_USER}
+
+[Timer]
+Unit=${UNIT}.service
+OnCalendar=${on_calendar}
+OnBootSec=1min
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+TIMER
+
+  local ok=1
+  run_sudo "$INSTALL_CMD" -o root -g root -m 0644 "$service_tmp" "$SYSTEMD_SERVICE_FILE" \
+    && run_sudo "$INSTALL_CMD" -o root -g root -m 0644 "$timer_tmp" "$SYSTEMD_TIMER_FILE" \
+    && run_sudo "$SYSTEMCTL_CMD" daemon-reload \
+    && run_sudo "$SYSTEMCTL_CMD" enable --now --quiet "${UNIT}.timer" \
+    || ok=0
+
+  rm -f -- "$service_tmp" "$timer_tmp" 2>/dev/null || true
+
+  if (( ! ok )); then
+    "$SUDO_CMD" "$RM_CMD" -f -- "$SYSTEMD_SERVICE_FILE" "$SYSTEMD_TIMER_FILE" >/dev/null 2>&1 || true
+    "$SUDO_CMD" "$SYSTEMCTL_CMD" daemon-reload >/dev/null 2>&1 || true
+    return 1
   fi
 
   return 0
@@ -476,38 +609,42 @@ PLIST
 
 schedule_removal() {
   local minutes="$1"
-  local expires_epoch=$(( $($DATE_CMD +%s) + minutes * 60 ))
+  local expires_epoch="$EXPIRES_EPOCH"
 
   (( DRY_RUN )) && return 0
 
   cancel_existing_timer_quietly
 
+  info "Scheduling automatic removal in $(format_duration "$minutes")..."
+
   if is_macos; then
-    info "Scheduling automatic removal in $(format_duration "$minutes")..."
-    if schedule_removal_launchd "$expires_epoch"; then
+    if schedule_removal_launchd; then
       save_state "$expires_epoch" "timed-launchd"
       success "Auto-removal scheduled for $(date_human "$expires_epoch")."
       return 0
     fi
-    warn "launchd scheduling failed. Using a root background sleep instead."
-  elif [[ -x "$SYSTEMD_RUN_CMD" ]]; then
-    info "Scheduling automatic removal in $(format_duration "$minutes")..."
-
-    if "$SUDO_CMD" "$SYSTEMD_RUN_CMD" \
-      --quiet \
-      --unit="$UNIT" \
-      --on-active="${minutes}m" \
-      --collect \
-      "$RM_CMD" -f -- "$SUDOERS_FILE"; then
+    warn "launchd scheduling failed."
+  elif systemd_available; then
+    if schedule_removal_systemd "$expires_epoch"; then
       save_state "$expires_epoch" "timed-systemd"
       success "Auto-removal scheduled for $(date_human "$expires_epoch")."
       return 0
     fi
+    warn "systemd timer scheduling failed."
   fi
 
-  schedule_removal_fallback "$minutes"
-  save_state "$expires_epoch" "timed-fallback"
-  success "Fallback auto-removal scheduled for $(date_human "$expires_epoch")."
+  if schedule_removal_fallback "$expires_epoch"; then
+    save_state "$expires_epoch" "timed-fallback"
+    success "Fallback auto-removal scheduled for $(date_human "$expires_epoch")."
+    return 0
+  fi
+
+  save_state "$expires_epoch" "timed-unscheduled"
+  if (( USE_NOTAFTER )); then
+    error "Could not schedule removal. sudo stops honoring the rule at expiry, but run '$SCRIPT_NAME disable' to delete it."
+  else
+    error "Could not schedule removal. Run '$SCRIPT_NAME disable' when you are done."
+  fi
 }
 
 do_enable() {
@@ -577,15 +714,23 @@ do_enable() {
   refresh_context
   validate_allow_specs "${ALLOW_SPECS[@]}"
 
-  local minutes="$(duration_to_minutes "$DURATION_RAW")"
+  local minutes
+  minutes="$(duration_to_minutes "$DURATION_RAW")" || exit 1
+
+  EXPIRES_EPOCH=""
+  USE_NOTAFTER=0
+  if (( ! UNTIL_DISABLED )); then
+    EXPIRES_EPOCH=$(( EPOCHSECONDS + minutes * 60 ))
+    sudo_supports_notafter && USE_NOTAFTER=1
+  fi
 
   banner
   warn "This grants passwordless sudo to '$TARGET_USER' for: ${(j:, :)ALLOW_SPECS}"
 
   if (( UNTIL_DISABLED )); then
     confirm "Enable without an auto-removal timer?" || die "Cancelled."
-  elif (( minutes > 240 )); then
-    confirm "Enable for $(format_duration "$minutes")? That is longer than 4 hours." || die "Cancelled."
+  elif (( minutes > 360 )); then
+    confirm "Enable for $(format_duration "$minutes")? That is longer than 6 hours." || die "Cancelled."
   fi
 
   install_sudoers_rule
@@ -604,7 +749,9 @@ do_enable() {
 
   "$SUDO_CMD" -k >/dev/null 2>&1 || true
 
-  if [[ "${(j:, :)ALLOW_SPECS}" == "ALL" ]]; then
+  if ! is_invoking_user; then
+    success "Passwordless sudo rule installed for '$TARGET_USER'."
+  elif [[ "${(j:, :)ALLOW_SPECS}" == "ALL" ]]; then
     if "$SUDO_CMD" -n true >/dev/null 2>&1; then
       success "Passwordless sudo is active for '$TARGET_USER'."
     else
@@ -614,8 +761,10 @@ do_enable() {
     success "Passwordless sudo allowlist is active for '$TARGET_USER'."
   fi
 
-  row "Sudoers file" "$SUDOERS_FILE"
-  row "Log file" "$LOG_FILE"
+  if (( ! QUIET )); then
+    row "Sudoers file" "$SUDOERS_FILE"
+    row "Log file" "$LOG_FILE"
+  fi
   info "Tell Claude/Codex: use 'sudo -n' and never ask for my sudo password."
 }
 
@@ -643,22 +792,11 @@ do_disable() {
   done
 
   refresh_context
-  load_state >/dev/null 2>&1 || true
-
-  local unit="${STATE[unit]:-$UNIT}"
 
   banner
   info "Disabling temporary sudo for '$TARGET_USER'..."
 
-  if [[ -n "$unit" ]]; then
-    if is_macos; then
-      "$SUDO_CMD" "$LAUNCHCTL_CMD" bootout "system/${unit}" >/dev/null 2>&1 || true
-      "$SUDO_CMD" "$RM_CMD" -f -- "/Library/LaunchDaemons/${unit}.plist" >/dev/null 2>&1 || true
-    else
-      "$SUDO_CMD" "$SYSTEMCTL_CMD" stop "${unit}.timer" "${unit}.service" >/dev/null 2>&1 || true
-      "$SUDO_CMD" "$SYSTEMCTL_CMD" reset-failed "${unit}.timer" "${unit}.service" >/dev/null 2>&1 || true
-    fi
-  fi
+  cancel_existing_timer_quietly
 
   if [[ -e "$SUDOERS_FILE" ]]; then
     run_sudo "$RM_CMD" -f -- "$SUDOERS_FILE" || die "Could not remove $SUDOERS_FILE"
@@ -673,7 +811,11 @@ do_disable() {
   "$SUDO_CMD" -k >/dev/null 2>&1 || true
   clear_state
 
-  success "Disabled. 'sudo -n' should now fail unless another rule/cache allows it."
+  if is_invoking_user; then
+    success "Disabled. 'sudo -n' should now fail unless another rule/cache allows it."
+  else
+    success "Disabled temporary sudo for '$TARGET_USER'."
+  fi
 }
 
 do_status() {
@@ -706,15 +848,32 @@ do_status() {
   local unit="${STATE[unit]:-$UNIT}"
   local timer_state="unknown"
 
-  if is_macos; then
-    if [[ -n "$unit" && -e "/Library/LaunchDaemons/${unit}.plist" ]]; then
-      timer_state="scheduled"
+  if [[ "$mode" == "timed-fallback" ]]; then
+    timer_state="root background poller (lost on reboot)"
+  elif is_macos; then
+    if [[ -n "$unit" && -e "${LAUNCHD_DIR}/${unit}.plist" ]]; then
+      timer_state="scheduled (launchd)"
     else
       timer_state="inactive"
     fi
   elif [[ -x "$SYSTEMCTL_CMD" && -n "$unit" ]]; then
-    timer_state="$($SYSTEMCTL_CMD is-active "${unit}.timer" 2>/dev/null || print -r -- inactive)"
+    # is-active prints the state even when it exits non-zero.
+    timer_state="$($SYSTEMCTL_CMD is-active "${unit}.timer" 2>/dev/null)"
+    [[ -n "$timer_state" ]] || timer_state="unknown"
   fi
+
+  local remaining="-"
+  if [[ "$active" == "yes" && "$expires" == <-> ]]; then
+    if (( EPOCHSECONDS >= expires )); then
+      remaining="${C_RED}overdue${C_RESET}: run '$SCRIPT_NAME disable'"
+    else
+      remaining="$(format_remaining $(( expires - EPOCHSECONDS )))"
+    fi
+  fi
+
+  local expiry_guard="timer only"
+  [[ "${STATE[notafter]:-0}" == "1" ]] && expiry_guard="timer + sudoers NOTAFTER"
+  [[ "$mode" == "until-disabled" ]] && expiry_guard="none (until disabled)"
 
   local sudo_n="requires password / not allowed"
   if "$SUDO_CMD" -n true >/dev/null 2>&1; then
@@ -727,7 +886,9 @@ do_status() {
   row "Sudo -n check" "$sudo_n"
   row "Mode" "$mode"
   row "Timer" "$timer_state"
+  row "Expiry guard" "$expiry_guard"
   row "Expires" "$(date_human "$expires")"
+  row "Remaining" "$remaining"
   row "Sudoers file" "$SUDOERS_FILE"
   row "State file" "$STATE_FILE"
   row "Log file" "$LOG_FILE"
@@ -771,6 +932,7 @@ do_doctor() {
   row "Script" "$SCRIPT_NAME v$VERSION"
   row "OS" "$OS_NAME"
   row "Shell" "${ZSH_VERSION:-unknown zsh}"
+  row "Sudo" "$("$SUDO_CMD" -V 2>/dev/null | head -n 1)"
   row "User" "$TARGET_USER"
   row "UID" "$TARGET_UID"
   row "State dir" "$STATE_DIR"
@@ -778,7 +940,7 @@ do_doctor() {
   print -r -- ""
 
   local missing=0
-  local name path
+  local name tool_path
   local -A checks=(
     sudo "$SUDO_CMD"
     visudo "$VISUDO_CMD"
@@ -791,16 +953,15 @@ do_doctor() {
   if is_macos; then
     checks[launchctl]="$LAUNCHCTL_CMD"
   else
-    checks[systemd-run]="$SYSTEMD_RUN_CMD"
     checks[systemctl]="$SYSTEMCTL_CMD"
   fi
 
-  for name in ${(k)checks}; do
-    path="${checks[$name]}"
-    if [[ -x "$path" ]]; then
-      row "$name" "${C_GREEN}ok${C_RESET}  $path"
+  for name in ${(ko)checks}; do
+    tool_path="${checks[$name]}"
+    if [[ -x "$tool_path" ]]; then
+      row "$name" "${C_GREEN}ok${C_RESET}  $tool_path"
     else
-      row "$name" "${C_RED}missing${C_RESET}  expected $path"
+      row "$name" "${C_RED}missing${C_RESET}  expected $tool_path"
       missing=1
     fi
   done
@@ -814,6 +975,20 @@ do_doctor() {
     missing=1
   fi
 
+  if is_macos; then
+    row "Scheduler" "launchd"
+  elif systemd_available; then
+    row "Scheduler" "systemd timer"
+  else
+    row "Scheduler" "${C_YELLOW}fallback poller${C_RESET} (systemd is not running)"
+  fi
+
+  if sudo_supports_notafter; then
+    row "NOTAFTER" "${C_GREEN}supported${C_RESET}"
+  else
+    row "NOTAFTER" "not supported (sudo-rs); timer only"
+  fi
+
   if "$SUDO_CMD" -n true >/dev/null 2>&1; then
     row "sudo -n" "${C_GREEN}works now${C_RESET}"
   else
@@ -823,11 +998,7 @@ do_doctor() {
   print -r -- ""
 
   if (( missing )); then
-    if is_macos; then
-      warn "Doctor found missing tools. Timed mode needs launchctl or the fallback sleeper."
-    else
-      warn "Doctor found missing tools. Timed mode needs systemd-run or the fallback sleeper."
-    fi
+    warn "Doctor found missing tools or directories."
     return 1
   fi
 
@@ -836,8 +1007,14 @@ do_doctor() {
 
 # ---------- Menu ----------
 
+# Menu actions run in a subshell so that a 'die' (bad input, a cancelled
+# prompt) returns to the menu instead of exiting it.
+menu_run() {
+  ( trap cleanup EXIT; "$@" )
+}
+
 menu_custom_duration() {
-  print -rn -- "Duration ${C_DIM}(examples: 15m, 30m, 2h, 1d)${C_RESET}: "
+  print -rn -- "Duration ${C_DIM}(examples: 45m, 2h, 12h, 1d)${C_RESET}: "
   local raw=""
   IFS= read -r raw
   [[ -n "$raw" ]] || { warn "Cancelled."; return 0; }
@@ -865,33 +1042,41 @@ menu_allowlist() {
 menu_loop() {
   while true; do
     banner
-    print -r -- "  ${C_BOLD}1${C_RESET}) Enable broad sudo for 15 minutes"
-    print -r -- "  ${C_BOLD}2${C_RESET}) Enable broad sudo for 30 minutes"
-    print -r -- "  ${C_BOLD}3${C_RESET}) Enable broad sudo for custom duration"
-    print -r -- "  ${C_BOLD}4${C_RESET}) Enable allowlisted sudo command"
-    print -r -- "  ${C_BOLD}5${C_RESET}) Enable broad sudo until disabled"
-    print -r -- "  ${C_BOLD}6${C_RESET}) Disable now"
-    print -r -- "  ${C_BOLD}7${C_RESET}) Status"
-    print -r -- "  ${C_BOLD}8${C_RESET}) Show logs"
-    print -r -- "  ${C_BOLD}9${C_RESET}) Doctor"
+    print -r -- "  ${C_BOLD}1${C_RESET}) Enable broad sudo for 30 minutes"
+    print -r -- "  ${C_BOLD}2${C_RESET}) Enable broad sudo for 1 hour"
+    print -r -- "  ${C_BOLD}3${C_RESET}) Enable broad sudo for 3 hours"
+    print -r -- "  ${C_BOLD}4${C_RESET}) Enable broad sudo for 6 hours"
+    print -r -- "  ${C_BOLD}5${C_RESET}) Enable broad sudo for custom duration"
+    print -r -- "  ${C_BOLD}6${C_RESET}) Enable allowlisted sudo command"
+    print -r -- "  ${C_BOLD}7${C_RESET}) Enable broad sudo until disabled"
+    print -r -- "  ${C_BOLD}8${C_RESET}) Disable now"
+    print -r -- "  ${C_BOLD}9${C_RESET}) Status"
+    print -r -- " ${C_BOLD}10${C_RESET}) Show logs"
+    print -r -- " ${C_BOLD}11${C_RESET}) Doctor"
     print -r -- "  ${C_BOLD}0${C_RESET}) Quit"
     print -r -- ""
     print -rn -- "${C_BOLD}Choose:${C_RESET} "
 
     local choice=""
-    IFS= read -r choice
+    if ! IFS= read -r choice; then
+      print -r -- ""
+      return 0
+    fi
 
     case "$choice" in
-      1) do_enable --duration 15m; pause_menu ;;
-      2) do_enable --duration 30m; pause_menu ;;
-      3) menu_custom_duration; pause_menu ;;
-      4) menu_allowlist; pause_menu ;;
-      5) do_enable --until-disabled; pause_menu ;;
-      6) do_disable; pause_menu ;;
-      7) do_status; pause_menu ;;
-      8) do_logs; pause_menu ;;
-      9) do_doctor; pause_menu ;;
+      1) menu_run do_enable --duration 30m; pause_menu ;;
+      2) menu_run do_enable --duration 1h; pause_menu ;;
+      3) menu_run do_enable --duration 3h; pause_menu ;;
+      4) menu_run do_enable --duration 6h; pause_menu ;;
+      5) menu_run menu_custom_duration; pause_menu ;;
+      6) menu_run menu_allowlist; pause_menu ;;
+      7) menu_run do_enable --until-disabled; pause_menu ;;
+      8) menu_run do_disable; pause_menu ;;
+      9) menu_run do_status; pause_menu ;;
+      10) menu_run do_logs; pause_menu ;;
+      11) menu_run do_doctor; pause_menu ;;
       0|q|Q|quit|exit) print -r -- "Bye."; return 0 ;;
+      "") ;;
       *) warn "Unknown option: $choice"; pause_menu ;;
     esac
   done
@@ -916,7 +1101,7 @@ Usage:
   ${SCRIPT_NAME} doctor                Check dependencies
 
 Enable options:
-  -d, --duration <time>        Duration: 15m, 30m, 2h, 1d. Default: 30m
+  -d, --duration <time>        Duration: 15m, 30m, 2h, 1d (max 7d). Default: 30m
   -m, --minutes <time>         Alias for --duration
       --allow <sudoers-spec>   Allowlist one exact sudoers command spec
       --all                    Use broad NOPASSWD: ALL, the default
@@ -927,10 +1112,14 @@ Enable options:
       --no-color               Disable color output
       --quiet                  Reduce output
 
+Automatic removal uses launchd (macOS) or a systemd timer (Linux) and still
+runs after a reboot. Without systemd, a root background poller is used, which
+does not survive a reboot.
+
 Examples:
   ${SCRIPT_NAME} enable --duration 30m
-  ${SCRIPT_NAME} timed 15m
-  ${SCRIPT_NAME} enable --duration 2h --yes
+  ${SCRIPT_NAME} timed 3h
+  ${SCRIPT_NAME} enable --duration 12h --yes
   ${SCRIPT_NAME} enable --allow "${EXAMPLE_ALLOW_SPEC}" --duration 30m
   ${SCRIPT_NAME} disable
 
