@@ -45,7 +45,7 @@ trap cleanup EXIT TERM
 
 # ---------------------- utils ----------------------
 # Pure gum-based styling functions
-gum_style_color() { 
+gum_style_color() {
   local color="$1"; local text="$2"
   if [[ -n "$GUM_BIN" ]]; then
     case "$color" in
@@ -63,7 +63,7 @@ gum_style_color() {
   fi
 }
 
-log() { 
+log() {
   if [[ -n "$GUM_BIN" ]]; then
     local prefix
     prefix=$(gum_run style --foreground 51 "[${SCRIPT_NAME}]")
@@ -74,7 +74,7 @@ log() {
   fi
 }
 
-die() { 
+die() {
   if [[ -n "$GUM_BIN" ]]; then
     local prefix
     prefix=$(gum_run style --foreground 196 "[ERROR]")
@@ -103,7 +103,7 @@ is_interactive_terminal() {
   [[ -t 0 && -t 1 && -t 2 ]] && [[ -e /dev/tty ]] 2>/dev/null
 }
 
-# Enhanced terminal cleanup - gum-compatible version  
+# Enhanced terminal cleanup - gum-compatible version
 cleanup_terminal() {
   # Gum-compatible cleanup without escape sequences
   if is_interactive_terminal; then
@@ -121,7 +121,7 @@ gum_run() {
     local orig_term="${TERM:-}"
     local orig_colorterm="${COLORTERM:-}"
     local orig_no_color="${NO_COLOR:-}"
-    
+
     if [[ -e /dev/tty ]] 2>/dev/null; then
       if is_interactive_terminal; then
         # Full interactive mode with optimal gum environment
@@ -142,7 +142,7 @@ gum_run() {
       # No TTY present; we require interactivity strictly
       return 1
     fi
-    
+
     # Restore original environment
     if [[ -n "$orig_term" ]]; then
       export TERM="$orig_term"
@@ -336,10 +336,10 @@ verify_privatebin_version() {
 }
 
 # ---------------------- UX helpers ----------------------
-clear_screen() { 
+clear_screen() {
   # Clean terminal state first
   cleanup_terminal
-  
+
   # Clear screen appropriately for environment
   if is_interactive_terminal && command -v clear >/dev/null 2>&1; then
     clear 2>/dev/null || true
@@ -347,7 +347,7 @@ clear_screen() {
     # Fallback for non-interactive/piped environments - minimal output
     printf "\n" 2>/dev/null || true
   fi
-  
+
   # Ensure clean state after clearing
   cleanup_terminal
 }
@@ -462,7 +462,7 @@ show_pre_execution_welcome() {
 # Welcome Screen #2: Main menu welcome (after dependencies ready)
 show_main_menu_welcome() {
   clear_screen
-  
+
   # Output welcome message using gum
   gum_run style \
     --border double --margin "1 2" --padding "1 3" \
@@ -486,16 +486,16 @@ show_main_menu_welcome() {
 # Step 3 overview screen shown before collecting inputs
 show_step3_overview() {
   clear_screen
-  
+
   # Safe display of step 3 header
   gum_run style \
     --border double --margin "1 2" --padding "1 3" \
     --foreground "117" --border-foreground "117" \
     --bold \
     "✨ Step 3: Create Your Support Post"
-  
+
   echo
-  
+
   # Safe display of collection info
   gum_run style \
     --border rounded --margin "0 2" --padding "1 2" \
@@ -510,7 +510,7 @@ show_step3_overview() {
     "• Environment details (image, OS/Arch)" \
     "• Links to uploaded logs and compose files" \
     "• Container name prefix"
-  
+
   echo
   gum_run confirm "Ready to create your post?" || { log "Cancelled."; exit 1; }
 }
@@ -586,7 +586,7 @@ main() {
     "✍️  Step 3/3: Describe Your Problem"
   show_step3_overview
   local q_title q_details q_error image_tag
-  
+
   # Enhanced styled title prompt
   gum_run style \
     --border rounded --margin "1" --padding "1 2" \
@@ -598,7 +598,7 @@ main() {
     "• We'll automatically prepend the container name" \
     "• Focus on the main issue or question"
   q_title="$(input_single "Enter your title:" "" 10)"
-  
+
   # Enhanced styled problem details prompt
   gum_run style \
     --border rounded --margin "1" --padding "1 2" \
@@ -615,7 +615,7 @@ main() {
     "• Entire logs (we upload them for you)" \
     "• Secrets or tokens"
   q_details="$(multiline_input "Describe your problem in detail:" 10)"
-  
+
   # Enhanced styled error snippet prompt
   gum_run style \
     --border rounded --margin "1" --padding "1 2" \
@@ -675,23 +675,23 @@ main() {
     "---------------- Copy from here ----------------"
   # Generate the final support post content using gum
   local logs_line comp_line error_section=""
-  
+
   if [[ -n "$logs_url" ]]; then
     logs_line=" - Logs: $logs_url"
   else
     logs_line=" - Logs: (upload unavailable/failed) -> attach '$logs_file' or upload to https://logs.notifiarr.com"
   fi
-  
+
   if [[ -n "$comp_url" ]]; then
     comp_line=" - Compose (auto): $comp_url"
   else
     comp_line=" - Compose: (upload unavailable/failed) -> attach '$comp_file' or upload to https://logs.notifiarr.com"
   fi
-  
+
   if [[ -n "$q_error" ]]; then
     error_section="Error Snippet:"$'\n''```'$'\n'"$q_error"$'\n''```'$'\n'
   fi
-  
+
   gum_run format -- \
     "# [${container}] ${q_title}" \
     "" \
@@ -713,13 +713,13 @@ main() {
 
   # Clipboard (optional) - generate plain text version
   local clipboard_content error_clip=""
-  
+
   if [[ -n "$q_error" ]]; then
     error_clip="Error Snippet:"$'\n''```'$'\n'"$q_error"$'\n''```'$'\n'
   fi
-  
+
   clipboard_content="[${container}] ${q_title}"$'\n\n'"Environment:"$'\n'" - Image: ${image_tag:-unknown}"$'\n'" - OS/Arch: ${OS}/${ARCH_RAW}"$'\n\n'"Links:"$'\n'"$logs_line"$'\n'"$comp_line"$'\n\n'"Problem Details:"$'\n'"$q_details"$'\n\n'"$error_clip"
-  
+
   if have pbcopy; then
     printf "%s" "$clipboard_content" | pbcopy
     log "Copied to clipboard (pbcopy)."
@@ -728,11 +728,10 @@ main() {
     log "Copied to clipboard (xclip)."
   fi
 
-  # Add spacing before final messages  
+  # Add spacing before final messages
   gum_run style ""
   log "Post this in the hotio Discord: $DISCORD_CHANNEL_URL"
   log "All temporary files will be removed on exit."
 }
 
 main "$@"
-

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # fail2ban-monitor.sh - Real-time Fail2ban IP Monitor
-# 
+#
 # This script will continuously monitor and display IPs that are currently banned by
 # Fail2ban. The display will be updated in real-time as new IPs are banned or existing
 # bans are lifted. The script must be run as root (using sudo) since it needs to access
@@ -73,13 +73,13 @@ check_dependencies() {
 get_banned_ips() {
     local current_time=$(date +%s)
     sqlite3 "$F2B_DB" "
-        SELECT 
+        SELECT
             ip,
             bantime,
             timeofban,
             (timeofban + bantime - $current_time) as remaining,
             jail
-        FROM bans 
+        FROM bans
         WHERE (timeofban + bantime) > $current_time
         ORDER BY remaining DESC;
     "
@@ -113,7 +113,7 @@ format_duration() {
     local hours=$(((seconds%86400)/3600))
     local minutes=$(((seconds%3600)/60))
     local secs=$((seconds%60))
-    
+
     if [ $days -gt 0 ]; then
         printf "%dd %02dh" $days $hours
     elif [ $hours -gt 0 ]; then
@@ -126,14 +126,14 @@ format_duration() {
 # Function: Get state hash that includes both database and fail2ban-client IPs
 get_state_hash() {
     local state=""
-    
+
     # Add database IPs to state
     while IFS="|" read -r ip bantime timeofban remaining jail; do
         if [ ! -z "$ip" ]; then
             state+="DB:$ip:$jail:$remaining"
         fi
     done < <(get_banned_ips)
-    
+
     # Add fail2ban-client IPs to state
     while read -r jail; do
         while read -r ip; do
@@ -142,7 +142,7 @@ get_state_hash() {
             fi
         done < <(get_client_banned_ips "$jail")
     done < <(get_active_jails)
-    
+
     # Sort the state to ensure consistent hashing
     echo "$state" | sort | md5sum
 }
@@ -152,31 +152,31 @@ display_bans() {
     local current_hash
     local previous_hash=""
     local lines_to_clear=0
-    
+
     # Save cursor position and hide it
     tput civis
-    
+
     # Initial clear and draw
     clear
-    
+
     while true; do
         current_hash=$(get_state_hash)
-        
+
         # Only update display if state has changed
         if [[ "$current_hash" != "$previous_hash" ]]; then
             # Save cursor position
             tput sc
-            
+
             # Move to top of screen
             tput cup 0 0
-            
+
             # Draw header
             draw_header
-            
+
             # Create arrays to track IPs
             declare -A displayed_ips
             declare -A client_ips
-            
+
             # Display IPs from SQLite with full timing information
             local db_ips=0
             while IFS="|" read -r ip bantime timeofban remaining jail; do
@@ -189,7 +189,7 @@ display_bans() {
                     ((db_ips++))
                 fi
             done < <(get_banned_ips)
-            
+
             # Get all client IPs first
             while read -r jail; do
                 while read -r ip; do
@@ -198,40 +198,40 @@ display_bans() {
                     fi
                 done < <(get_client_banned_ips "$jail")
             done < <(get_active_jails)
-            
+
             # Display client IPs
             for ip in "${!client_ips[@]}"; do
                 jail="${client_ips[$ip]}"
                 printf "${BOLD}│${NC} %-15s ${BOLD}│${NC} %-14s ${BOLD}│${NC} %-14s ${BOLD}│${NC} %-14s ${BOLD}│${NC}\n" \
                        "$ip" "unknown" "active" "$jail"
             done
-            
+
             # Close the table
             echo -e "${BOLD}└$(printf '─%.0s' $(seq 1 17))┴$(printf '─%.0s' $(seq 1 16))┴$(printf '─%.0s' $(seq 1 16))┴$(printf '─%.0s' $(seq 1 16))┘${NC}"
-            
+
             # Clear to end of screen before adding status lines
             tput ed
-            
+
             # Add status line and quit message with proper spacing
             echo -e "\n${YELLOW}Total Banned IPs: $((db_ips + ${#client_ips[@]}))${NC} │ ${GREEN}Last Updated: $(date '+%Y-%m-%d %H:%M:%S')${NC}"
             echo -e "\n${BOLD}Press 'q' to quit${NC}"
-            
+
             # Calculate total lines for next clear
             lines_to_clear=$((db_ips + ${#client_ips[@]} + 8))
-            
+
             # Restore cursor position
             tput rc
-            
+
             previous_hash=$current_hash
         fi
-        
+
         # Check for quit command
         read -t 1 -N 1 input
         if [[ $input = "q" ]] || [[ $input = "Q" ]]; then
             break
         fi
     done
-    
+
     # Show cursor before exiting
     tput cnorm
 }
@@ -242,11 +242,10 @@ main() {
     check_dependencies
     trap cleanup EXIT
     trap 'error_exit "Script interrupted."' INT TERM
-    
+
     # Clear screen once at start
     clear
     display_bans
 }
 
 main
-
