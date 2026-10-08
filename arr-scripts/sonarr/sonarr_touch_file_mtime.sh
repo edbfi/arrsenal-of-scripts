@@ -20,4 +20,3 @@
 
 touch "$sonarr_episodefile_path"
 exit 0
-

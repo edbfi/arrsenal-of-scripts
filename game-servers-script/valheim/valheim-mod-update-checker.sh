@@ -84,19 +84,19 @@ print_row() {
     local author=$3
     local installed=$4
     local latest=$5
-    
+
     # Truncate fields if they're too long
     name="${name:0:28}"
     author="${author:0:18}"
     installed="${installed:0:13}"
     latest="${latest:0:13}"
-    
+
     # Pad fields to fixed width
     printf -v name "%-28s" "$name"
     printf -v author "%-18s" "$author"
     printf -v installed "%-13s" "$installed"
     printf -v latest "%-13s" "$latest"
-    
+
     echo -e "${color}| ${name} | ${author} | ${installed} | ${latest} |${RESET}"
 }
 
@@ -176,10 +176,10 @@ while read -r MOD_NAME; do
         AUTHOR="${BASH_REMATCH[1]}"
         NAME="${BASH_REMATCH[2]}"
         INSTALLED_VERSION="${BASH_REMATCH[3]}"
-        
+
         # Look up the latest version from our mapping file
         LATEST_VERSION=$(grep -i "^${AUTHOR},${NAME}," "$MAPPING_FILE" | cut -d',' -f3)
-        
+
         if [[ -z "$LATEST_VERSION" ]]; then
             TABLE_ROWS+=("${TABLE_WARNING}|${NAME}|${AUTHOR}|${INSTALLED_VERSION}|Not found")
             LOG_ENTRIES+=("${YELLOW}WARNING: Could not find mod $AUTHOR/$NAME in Thunderstore API${RESET}")
@@ -222,5 +222,3 @@ done
 # Clean up
 rm -f "$TMP_FILE" "$MODS_LIST" "$UNIQUE_MODS_LIST" "$MAPPING_FILE"
 log_message "${BOLD}${CYAN}Mod update check completed${RESET}"
-
-

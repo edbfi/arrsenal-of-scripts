@@ -56,7 +56,7 @@ check_danish_audio() {
 mark_download_failed() {
     local history_id="$1"
     log_debug "Marking history entry with ID: $history_id as failed"
-    
+
     response=$(curl -s -H "X-Api-Key: $RADARR_API_KEY" -X POST \
         "$RADARR_API_URL/history/failed/$history_id")
 
@@ -92,7 +92,7 @@ find_history_record_id() {
 delete_movie_file() {
     local movie_file_id="$1"
     log_debug "Deleting movie file with ID: $movie_file_id"
-    
+
     response=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
         -H "X-Api-Key: $RADARR_API_KEY" \
         "$RADARR_API_URL/moviefile/$movie_file_id")

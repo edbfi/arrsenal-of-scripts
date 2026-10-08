@@ -3,7 +3,7 @@
 # -----------------------------------------------------------------------------
 # server-backup-script.sh
 #
-# A minimalist, automated backup script that uses tar, gzip, and OpenSSL 
+# A minimalist, automated backup script that uses tar, gzip, and OpenSSL
 # for encryption and compression. Optional Docker Compose stop/start management,
 # with logs and backup retention.
 #
@@ -209,7 +209,7 @@ create_backup() {
 
     while [ $retry_count -lt $max_retries ] && [ "$success" = false ]; do
         log "Backup attempt $((retry_count + 1))/$max_retries"
-        
+
         # Create a tar archive, pipe through gzip, then encrypt with OpenSSL
         # The final output is a single encrypted file with ".tar.gz.enc"
         if tar -cf - "${BACKUP_DIRS[@]}" \
@@ -355,4 +355,3 @@ fi
 log "Backup completed @ $(date '+%Y-%m-%d %H:%M:%S')."
 log "Backup file: $BACKUP_FILE"
 exit 0
-

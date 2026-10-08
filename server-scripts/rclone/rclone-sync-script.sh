@@ -218,7 +218,7 @@ if [ ${#RCLONE_FILTERS[@]} -gt 0 ]; then
         # Remove surrounding quotes if present
         filter_clean=$(echo "$filter" | sed 's/^"//;s/"$//')
         log_message "  $filter_clean"
-        
+
         # Extract directory path from filter rule if it's an include rule
         if [[ $filter_clean == "+"* ]]; then
             # Extract path, remove '/**' suffix
