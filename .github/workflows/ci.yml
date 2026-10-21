@@ -46,7 +46,7 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/age/age" --version | grep -qx 'v1.3.2'
           echo "$RUNNER_TEMP/age" >> "$GITHUB_PATH"
-      - uses: j178/prek-action@1382ad72dea72f9d53832f2bcb65b3e87a947204 # v3.0.1
+      - uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d # v3.1.0
         with: { extra-args: "--all-files --hook-stage manual" }
   smoke:
     runs-on: ubuntu-latest
