@@ -997,6 +997,33 @@ def describe(install_root: Path) -> None:
         print(f"    {legacy.directory.name}: legacy layout, no manifest (kept, never reused)")
 
 
+def show_status(
+    install_root: Path, registry_source: str, platform_key: str, host: NativePlatform
+) -> tuple[RegistrySnapshot, PlatformBinarySpec]:
+    """Print the registry and install state; reads only."""
+    print(f"Reading ACP registry ({registry_source}) ...")
+    snapshot = load_registry(registry_source)
+    spec = snapshot.release.binaries.get(platform_key)
+    if spec is None:
+        available = ", ".join(sorted(snapshot.release.binaries))
+        raise UpdaterError(f"No binary listed for {platform_key}. Available: {available}")
+
+    print(f"\nAntigravity ACP status ({platform_key}{', Rosetta shell' if host.translated else ''}):")
+    managed = detect_t3_managed_version(DEFAULT_T3_MANAGED_ROOT)
+    if managed is not None:
+        print(f"  T3 managed version: {managed}")
+    print(f"  Registry version  : {snapshot.release.version} (sha256 {snapshot.sha256})")
+    describe(install_root)
+    return snapshot, spec
+
+
+def activation_target(value: str) -> str:
+    """--activate takes a directory name under releases/, never a path."""
+    if value in ("", ".", "..") or Path(value).name != value:
+        raise UpdaterError(f"--activate takes a release name as shown by --list, not a path: {value!r}")
+    return value
+
+
 def run_cli(
     argv: list[str] | None = None,
     input_fn: Callable[[str], str] = input,
@@ -1014,6 +1041,12 @@ def run_cli(
         describe(install_root)
         return 0
 
+    if cast("bool", args.check_only):
+        # Read-only, so no lock: it reports even while another updater runs.
+        host = native or detect_native_platform()
+        _ = show_status(install_root, registry_source, platform_override or host.key, host)
+        return 0
+
     with install_lock(install_root):
         if cast("bool", args.prune):
             deleted = prune_releases(install_root, assume_yes=assume_yes, input_fn=input_fn)
@@ -1025,7 +1058,7 @@ def run_cli(
                 if target is None:
                     raise UpdaterError("No previous release recorded")
             else:
-                target = install_root / RELEASES_DIR / cast("str", args.activate)
+                target = install_root / RELEASES_DIR / activation_target(cast("str", args.activate))
             host = native or detect_native_platform()
             release = validate_release(target, host.key)
             changed = activate_release(install_root, release)
@@ -1035,27 +1068,11 @@ def run_cli(
 
         host = native or detect_native_platform()
         platform_key = platform_override or host.key
-        check_only = cast("bool", args.check_only)
-        if platform_key != host.key and not check_only:
+        if platform_key != host.key:
             raise UpdaterError(
                 f"Refusing to install {platform_key} binaries on a {host.key} host"
             )
-
-        print(f"Reading ACP registry ({registry_source}) ...")
-        snapshot = load_registry(registry_source)
-        spec = snapshot.release.binaries.get(platform_key)
-        if spec is None:
-            available = ", ".join(sorted(snapshot.release.binaries))
-            raise UpdaterError(f"No binary listed for {platform_key}. Available: {available}")
-
-        print(f"\nAntigravity ACP status ({platform_key}{', Rosetta shell' if host.translated else ''}):")
-        managed = detect_t3_managed_version(DEFAULT_T3_MANAGED_ROOT)
-        if managed is not None:
-            print(f"  T3 managed version: {managed}")
-        print(f"  Registry version  : {snapshot.release.version} (sha256 {snapshot.sha256})")
-        describe(install_root)
-        if check_only:
-            return 0
+        snapshot, spec = show_status(install_root, registry_source, platform_key, host)
 
         reusable = None if cast("bool", args.force) else find_reusable_release(
             install_root, snapshot.release.version, platform_key

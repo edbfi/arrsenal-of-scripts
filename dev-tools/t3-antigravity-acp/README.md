@@ -47,7 +47,7 @@ Credentials are not handled here. Configure API-key auth and environment
 
 ```sh
 cd dev-tools/t3-antigravity-acp   # in your arrsenal-of-scripts checkout
-python3 update_antigravity_acp.py --check-only            # status only, no changes
+python3 update_antigravity_acp.py --check-only            # status only: no lock, no changes
 python3 update_antigravity_acp.py --list                  # releases and links
 python3 update_antigravity_acp.py --yes                   # install/update and activate (never deletes)
 python3 update_antigravity_acp.py --yes --no-activate     # install and verify only

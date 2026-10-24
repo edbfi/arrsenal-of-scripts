@@ -427,6 +427,26 @@ class UnattendedAndPruneTests(unittest.TestCase):
             self.assertEqual(sb.release_names(), ["1.4.1-linux-x86_64", "1.5.0-linux-x86_64"])
             self.assertTrue(legacy.is_dir())
 
+    def test_check_only_takes_no_lock_and_writes_nothing(self) -> None:
+        with sandbox() as sb:
+            code, out = sb.run_updater("--registry", str(sb.registry("1.4.1")), "--check-only")
+            self.assertEqual(code, 0)
+            self.assertIn("Registry version  : 1.4.1", out)
+            self.assertFalse(sb.root.exists())
+            with install_lock(sb.root):
+                code, _ = sb.run_updater("--registry", str(sb.registry("1.4.1")), "--check-only")
+            self.assertEqual(code, 0)
+            self.assertEqual(sb.downloads, [])
+
+    def test_activate_takes_a_release_name_not_a_path(self) -> None:
+        with sandbox() as sb:
+            _ = sb.run_updater("--registry", str(sb.registry("1.4.1")), "--yes")
+            for bad in ("../releases/1.4.1-linux-x86_64", "..", "."):
+                with self.assertRaisesRegex(UpdaterError, "release name"):
+                    _ = sb.run_updater("--activate", bad)
+            code, _ = sb.run_updater("--activate", "1.4.1-linux-x86_64")
+            self.assertEqual(code, 0)
+
     def test_lock_contention_fails_fast(self) -> None:
         with sandbox() as sb:
             with install_lock(sb.root):
