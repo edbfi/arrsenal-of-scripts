@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from upkeep import history, layout, selfupdate
-from upkeep.cli import parse_args
+from upkeep.cli import main, parse_args
 from upkeep.config import OutputMode
 from upkeep.host import Host
 from upkeep.model import Mode, Outcome, RunSummary, Status
@@ -61,6 +61,43 @@ def test_parse_args_narrows() -> None:
     assert args.jobs == 2
     assert args.output is OutputMode.QUIET
     assert parse_args([]).command is None
+
+
+@pytest.fixture
+def broken_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    path = tmp_path / "config" / "upkeep" / "config.toml"
+    path.parent.mkdir(parents=True)
+    _ = path.write_text("[tasks.claude]\nwhen-busy = 'skip'\n")
+    return path
+
+
+def test_broken_config_still_allows_repair(
+    broken_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["config", "path"]) == 0
+    captured = capsys.readouterr()
+    assert str(broken_config) in captured.out
+    assert "using the defaults" in captured.err
+    assert main(["config", "show"]) == 2
+    assert main(["run", "-n", "--plain"]) == 2
+
+
+def _as_root(_host: Host) -> bool:
+    return True
+
+
+def test_root_may_only_read(
+    broken_config: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _ = broken_config.write_text("")
+    monkeypatch.setattr(Host, "is_root", property(_as_root))
+    for argv in (["self", "install"], ["config", "edit"], ["run"], ["schedule", "install"]):
+        assert main(argv) == 2, argv
+        assert "must not run as root" in capsys.readouterr().err
+    assert main(["config", "path"]) == 2
+    assert main(["logs"]) == 1  # read-only: allowed, and there are no runs yet
 
 
 # ----------------------------------------------------------- self-update

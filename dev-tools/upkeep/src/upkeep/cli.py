@@ -13,8 +13,8 @@ from rich.table import Table
 from rich.text import Text
 
 from upkeep import __version__, config, history, launcher, schedule, selfupdate
-from upkeep.app import App, RunRequest
-from upkeep.config import ConfigError, OutputMode
+from upkeep.app import EXIT_LOCKED, App, RunRequest, load_config
+from upkeep.config import Config, ConfigError, OutputMode
 from upkeep.engine import CycleError
 from upkeep.host import Host, UnsupportedHostError
 from upkeep.model import Mode
@@ -235,7 +235,7 @@ def cmd_config(app: App, args: Args) -> int:
             app.reload()  # validate what was written
             app.console.print(Text("✓ config is valid", "green"))
         case _:
-            app.console.print(str(path))
+            app.console.print(str(path), soft_wrap=True)
     return 0
 
 
@@ -245,7 +245,7 @@ def cmd_logs(app: App, args: Args) -> int:
         app.console.print("no runs yet")
         return 1
     if args.path_only:
-        app.console.print(str(path))
+        app.console.print(str(path), soft_wrap=True)
     else:
         _ = sys.stdout.write(path.read_text(errors="replace"))
     return 0
@@ -305,7 +305,25 @@ def dispatch(app: App, args: Args) -> int:
             raise AssertionError(f"unhandled command {other}")
 
 
-NEEDS_USER = {None, "run", "install", "setup", "schedule"}
+# Commands that write nothing. Anything else run as root (say via sudo, which
+# keeps HOME) could leave root-owned files in the user's home.
+READ_ONLY = {"status", "list", "logs"}
+
+
+def needs_valid_config(args: Args) -> bool:
+    """Whether a broken config.toml stops this command.
+
+    The commands that repair or bypass the file keep working on defaults.
+    """
+    match args.command:
+        case "config":
+            return args.action == "show"
+        case "logs" | "self":
+            return False
+        case "schedule":
+            return args.action != "remove"
+        case _:
+            return True
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -315,10 +333,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     err = Console(stderr=True, highlight=False)
     try:
         host = Host.detect()
-        if host.is_root and not args.allow_root and args.command in NEEDS_USER:
+        if host.is_root and not args.allow_root and args.command not in READ_ONLY:
             err.print(Text(ROOT_REFUSAL, "red"))
             return 2
-        app = App(host, config.load(host.config_file), console, raw)
+        try:
+            loaded = load_config(host.config_file)
+        except (ConfigError, UnknownTaskError) as error:
+            if needs_valid_config(args):
+                raise
+            err.print(Text(f"upkeep: {error}\nupkeep: using the defaults", "yellow"))
+            loaded = Config()
+        app = App(host, loaded, console, raw)
         return dispatch(app, args)
     except (ConfigError, UnknownTaskError, UnsupportedHostError, CycleError) as error:
         err.print(Text(f"upkeep: {error}", "red"))
