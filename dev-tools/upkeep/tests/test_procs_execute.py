@@ -73,6 +73,13 @@ def test_run_streams_and_separates_stderr() -> None:
     assert seen == ["out"]
 
 
+def test_character_split_across_reads_is_decoded() -> None:
+    # "█" is e2 96 88; the sleep makes the two halves arrive as separate reads.
+    script = r"printf '\342\226'; sleep 0.3; printf '\210\n'"
+    result = asyncio.run(execute.run(["sh", "-c", script], env=dict(os.environ), sink=print))
+    assert result.output == ("█",)
+
+
 def test_timeout_kills_process_group(tmp_path: Path) -> None:
     marker = tmp_path / "survived"
 

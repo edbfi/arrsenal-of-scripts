@@ -6,6 +6,7 @@ takes down the whole pipeline it started, not just the first process.
 """
 
 import asyncio
+import codecs
 import os
 import re
 import signal
@@ -133,8 +134,11 @@ async def run(
 
 
 async def _pump(stream: asyncio.StreamReader, splitter: LineSplitter) -> None:
+    # Incremental, so a multi-byte character split across two reads survives.
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     while chunk := await stream.read(65536):
-        splitter.feed(chunk.decode(errors="replace"))
+        splitter.feed(decoder.decode(chunk))
+    splitter.feed(decoder.decode(b"", final=True))
     splitter.close()
 
 
