@@ -1,0 +1,43 @@
+[project]
+name = "upkeep"
+version = "0.1.0"
+description = "Keep a host's AI and developer CLI toolchain installed and up to date"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "AGPL-3.0-only"
+dependencies = [
+    "questionary>=2.1.1",
+    "rich>=15.0.0",
+]
+
+[project.scripts]
+upkeep = "upkeep.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+typeCheckingMode = "recommended"
+include = ["src", "tests", "tools"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+extend-exclude = ["tools/typing_gate.py"]  # vendored from the typing-gate skill
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PTH", "RUF", "TC"]
+ignore = ["E501"]  # line length is the formatter's job
+allowed-confusables = ["–", "›", "❯"]  # deliberate UI glyphs
+
+[tool.pytest.ini_options]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+testpaths = ["tests"]

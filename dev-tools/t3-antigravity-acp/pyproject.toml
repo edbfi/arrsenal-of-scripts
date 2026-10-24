@@ -1,0 +1,9 @@
+[project]
+name = "t3-custom-tools"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "recommended"
+include = ["src", "tests", "tools", "."]

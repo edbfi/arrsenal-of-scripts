@@ -88,3 +88,27 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      # Each dev-tools project is its own uv project with its own [tool.basedpyright]
+      # table; -p is required because pyright prefers the root pyrightconfig.json.
+      - id: upkeep
+        name: upkeep (typing gate, types, lint, tests)
+        language: system
+        pass_filenames: false
+        files: ^dev-tools/upkeep/
+        entry: >-
+          bash -c 'cd dev-tools/upkeep
+          && python3 tools/typing_gate.py
+          && uv run --frozen uvx basedpyright@latest -p pyproject.toml
+          && uv run --frozen ruff check .
+          && uv run --frozen ruff format --check .
+          && uv run --frozen pytest -q'
+      - id: t3-antigravity-acp
+        name: t3-antigravity-acp (typing gate, types, tests)
+        language: system
+        pass_filenames: false
+        files: ^dev-tools/t3-antigravity-acp/
+        entry: >-
+          bash -c 'cd dev-tools/t3-antigravity-acp
+          && python3 tools/typing_gate.py
+          && uvx basedpyright@latest -p pyproject.toml
+          && python3 -m unittest discover -s tests -q'

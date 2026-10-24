@@ -10,6 +10,7 @@ This is a collection of scripts I’ve thrown together for managing servers, aut
 
 - **'Arr' App Scripts**: Odd scripts for the "Servarr" app suite
 - **Server Management Tools**: Odd scripts for my personal server management, including [temporary sudo access for AI coding agents](server-scripts/sudo/ai-agent-sudo.zsh).
+- **Dev Tools**: [upkeep](dev-tools/upkeep/README.md) keeps AI and developer CLIs (claude, codex, agy, uv, ruff, prek, bun, Homebrew, ACPs, …) installed and updated across hosts, and the [T3 Code Antigravity ACP updater](dev-tools/t3-antigravity-acp/README.md) it drives.
 - **Miscellaneous Scripts**: Random scripts I found useful or fun to create.
 - **Other Tools**: Whatever else made sense to throw in here.
 
