@@ -163,8 +163,11 @@ def _self_update(app: App) -> None:
     app.console.print(Text(result.describe()))
     for line in result.changes:
         app.console.print(Text(f"  {line}", "grey50"))
-    if result.state is selfupdate.State.AVAILABLE and prompt.confirm("Update now?"):
-        app.apply_self_update(result)
+    if (
+        result.state is selfupdate.State.AVAILABLE
+        and prompt.confirm("Update now?")
+        and app.self_update_now(result)
+    ):
         app.console.print(Text("✓ up to date", "green"))
 
 

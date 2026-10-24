@@ -153,6 +153,16 @@ class App:
             prefix = "upkeep self-update: " if scheduled else ""
             self.console.print(Text(f"{prefix}{result.describe()}", "yellow"))
 
+    def self_update_now(self, result: selfupdate.Check) -> bool:
+        """Apply an update outside a run, holding the run lock so no run is mid-import."""
+        try:
+            with history.instance_lock(self.host.state_dir):
+                self.apply_self_update(result)
+        except history.AlreadyRunningError as error:
+            self.console.print(Text(f"upkeep: {error}; update after it finishes", "yellow"))
+            return False
+        return True
+
     def apply_self_update(self, result: selfupdate.Check) -> None:
         applied = selfupdate.apply(result, self.host)
         self.console.print(Text(f"upkeep updated {applied.old[:7]} → {applied.new[:7]}", "green"))

@@ -210,11 +210,13 @@ def cmd_self(app: App, args: Args) -> int:
             app.console.print(result.describe())
             for line in result.changes:
                 app.console.print(Text(f"  {line}", "grey50"))
-            if result.state is selfupdate.State.AVAILABLE:
-                app.apply_self_update(result)
-            return (
-                0 if result.state in {selfupdate.State.CURRENT, selfupdate.State.AVAILABLE} else 1
-            )
+            match result.state:
+                case selfupdate.State.CURRENT:
+                    return 0
+                case selfupdate.State.AVAILABLE:
+                    return 0 if app.self_update_now(result) else EXIT_LOCKED
+                case _:
+                    return 1
         case _:
             app.console.print(app.header())
             return 0
