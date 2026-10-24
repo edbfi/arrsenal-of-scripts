@@ -31,12 +31,14 @@ adds registry arguments (Linux: `--uid=`) only when the caller did not pass them
 and `exec`s ACP. Neither script writes to stdout, so ACP's JSON-RPC stream is
 untouched.
 
-A release is promoted only after archive members are validated, both binaries
-are confirmed to be the right format and CPU architecture, and an ACP
-`initialize` request succeeds. The manifest records registry source and SHA-256,
-archive URL and SHA-256, file hashes, formats and the smoke-test result. These
-hashes are local integrity/provenance records, not publisher signatures. A
-same-version directory without a matching, verifiable manifest is never reused.
+A release is promoted only after the archive matches the SHA-256 the registry
+publishes for the platform, archive members are validated, both binaries are
+confirmed to be the right format and CPU architecture, and an ACP `initialize`
+request succeeds. Downloads are https only, redirects included. The manifest
+records registry source and SHA-256, archive URL and SHA-256, file hashes,
+formats and the smoke-test result. The file hashes are local provenance
+records, not publisher signatures. A same-version directory without a
+matching, verifiable manifest is never reused.
 
 Credentials are not handled here. Configure API-key auth and environment
 (`GOOGLE_GEMINI_BASE_URL`, `AGY_ACP_DEFAULT_MODEL`) in T3 Code's provider settings.

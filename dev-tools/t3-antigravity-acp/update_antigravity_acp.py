@@ -18,6 +18,7 @@ import http.client
 import json
 import os
 import platform
+import re
 import selectors
 import shlex
 import shutil
@@ -54,12 +55,13 @@ STAGING_PREFIX = ".staging-"
 MANIFEST_SCHEMA = 1
 USER_AGENT = "t3-antigravity-acp-updater/2.0"
 MAX_REDIRECTS = 5
+SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 MAX_EXTRACTED_BYTES = 8 * 1024**3
 SMOKE_TEST_TIMEOUT_SECONDS = 180.0
 EXIT_LOCK_BUSY = 75
 INTEGRITY_NOTE = (
-    "Hashes are computed locally at install time as integrity and provenance records; "
-    + "they are not publisher signatures."
+    "The archive matched the sha256 the ACP registry publishes. File hashes are computed "
+    + "locally at install time as provenance records; they are not publisher signatures."
 )
 
 ELF_MACHINES = {62: "x86_64", 183: "aarch64"}
@@ -82,6 +84,7 @@ class PlatformBinarySpec:
     archive_url: str
     cmd: str
     args: tuple[str, ...]
+    sha256: str  # published by the registry; the download must match it
 
 
 @dataclass(frozen=True)
@@ -176,12 +179,14 @@ def parse_registry_release(raw: str) -> RegistryRelease:
         archive_url = as_str(spec.get("archive"))
         cmd = as_str(spec.get("cmd"))
         args = as_str_tuple(spec.get("args"))
+        digest = as_str(spec.get("sha256")).lower()
         if archive_url and cmd:
             binaries[key] = PlatformBinarySpec(
                 platform_key=key,
                 archive_url=archive_url,
                 cmd=cmd,
                 args=args,
+                sha256=digest,
             )
 
     if not binaries:
@@ -192,6 +197,17 @@ def parse_registry_release(raw: str) -> RegistryRelease:
 
 def is_remote_source(source: str) -> bool:
     return urllib.parse.urlsplit(source).scheme in ("http", "https")
+
+
+def verify_archive_digest(archive_path: Path, spec: PlatformBinarySpec) -> None:
+    """Fail unless the download matches the sha256 the registry publishes."""
+    if not SHA256_HEX.fullmatch(spec.sha256):
+        raise UpdaterError(f"Registry lists no valid sha256 for {spec.platform_key}; refusing to install")
+    actual = sha256_file(archive_path)
+    if actual != spec.sha256:
+        raise UpdaterError(
+            f"Archive sha256 mismatch for {spec.archive_url}: registry {spec.sha256}, downloaded {actual}"
+        )
 
 
 def load_registry(source: str, timeout: float = 15.0) -> RegistrySnapshot:
@@ -533,16 +549,13 @@ def open_http_response(url: str, timeout: float) -> Generator[http.client.HTTPRe
     current_url = url
     for _ in range(MAX_REDIRECTS + 1):
         parsed = urllib.parse.urlsplit(current_url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise UpdaterError(f"Unsupported or invalid URL: {current_url}")
+        # https only, redirects included: a plaintext hop could swap the body.
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise UpdaterError(f"Refusing non-https or invalid URL: {current_url}")
         path = parsed.path or "/"
         if parsed.query:
             path = f"{path}?{parsed.query}"
-        conn: http.client.HTTPConnection
-        if parsed.scheme == "https":
-            conn = http.client.HTTPSConnection(parsed.netloc, timeout=timeout)
-        else:
-            conn = http.client.HTTPConnection(parsed.netloc, timeout=timeout)
+        conn = http.client.HTTPSConnection(parsed.netloc, timeout=timeout)
         try:
             conn.request("GET", path, headers={"User-Agent": USER_AGENT})
             response = conn.getresponse()
@@ -756,6 +769,7 @@ def install_release(
         scratch = staging / "scratch"
         payload.mkdir()
         scratch.mkdir(mode=0o700)
+        verify_archive_digest(archive_path, spec)
         hashes = safe_extract(archive_path, payload, (exe_name, harness_name))
         formats = {name: verify_binary_platform(payload / name, platform_key) for name in hashes}
         launch_text = render_release_launch(snapshot.release.version, platform_key, exe_name, spec.args)

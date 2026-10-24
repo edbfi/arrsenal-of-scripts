@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -25,6 +26,7 @@ from update_antigravity_acp import (
     find_reusable_release,
     inspect_binary,
     install_lock,
+    open_http_response,
     link_target,
     as_dict,
     parse_json_object,
@@ -51,28 +53,60 @@ def macho(arch: str) -> bytes:
     return b"\xcf\xfa\xed\xfe" + struct.pack("<I", cpu) + bytes(64)
 
 
-def registry_json(version: str, platform_key: str = "linux-x86_64") -> str:
-    entries = {
-        "linux-x86_64": {"archive": "https://example.invalid/x64.zip", "args": ["--uid="]},
-        "linux-aarch64": {"archive": "https://example.invalid/arm64.zip", "args": ["--uid="]},
-        "darwin-aarch64": {"archive": "https://example.invalid/darwin-arm64.zip"},
-    }
-    binary = {
-        key: {"cmd": "./agy_acp_server.par", **value}
-        for key, value in entries.items()
-        if key == platform_key or platform_key == "all"
-    }
+ARCHIVE_URLS = {
+    "linux-x86_64": "https://example.invalid/x64.zip",
+    "linux-aarch64": "https://example.invalid/arm64.zip",
+    "darwin-aarch64": "https://example.invalid/darwin-arm64.zip",
+}
+
+
+def native_header(platform_key: str) -> bytes:
+    return {
+        "linux-x86_64": elf("x86_64"),
+        "linux-aarch64": elf("aarch64"),
+        "darwin-aarch64": macho("aarch64"),
+    }[platform_key]
+
+
+def archive_bytes(header: bytes) -> bytes:
+    """A release zip; fixed timestamps keep its digest stable."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for name in ("agy_acp_server.par", "localharness_external"):
+            zf.writestr(zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)), header)
+    return buffer.getvalue()
+
+
+def registry_json(
+    version: str,
+    platform_key: str = "linux-x86_64",
+    header: bytes | None = None,
+    digest: str | None = None,
+) -> str:
+    """The registry entry; it publishes the digest of the archive the fake download serves."""
+    binary: dict[str, dict[str, object]] = {}
+    for key, url in ARCHIVE_URLS.items():
+        if key != platform_key and platform_key != "all":
+            continue
+        published = hashlib.sha256(archive_bytes(header or native_header(key))).hexdigest()
+        entry: dict[str, object] = {
+            "archive": url,
+            "cmd": "./agy_acp_server.par",
+            "sha256": published if digest is None else digest,
+        }
+        if key.startswith("linux-"):
+            entry["args"] = ["--uid="]
+        binary[key] = entry
     return json.dumps(
         {"id": "antigravity-acp", "name": "Google Antigravity", "version": version,
          "distribution": {"binary": binary}}
     )
 
 
-def fake_archive(header: bytes) -> Callable[[str, Path], None]:
-    def download(_url: str, destination: Path) -> None:
-        with zipfile.ZipFile(destination, "w") as zf:
-            zf.writestr("agy_acp_server.par", header)
-            zf.writestr("localharness_external", header)
+def fake_archive(header: bytes | None) -> Callable[[str, Path], None]:
+    def download(url: str, destination: Path) -> None:
+        platform_key = next(k for k, v in ARCHIVE_URLS.items() if v == url)
+        _ = destination.write_bytes(archive_bytes(header or native_header(platform_key)))
 
     return download
 
@@ -97,9 +131,15 @@ class Sandbox:
         self.root: Path = base / "custom-tools"
         self.downloads: list[str] = []
 
-    def registry(self, version: str, platform_key: str = "linux-x86_64") -> Path:
+    def registry(
+        self,
+        version: str,
+        platform_key: str = "linux-x86_64",
+        header: bytes | None = None,
+        digest: str | None = None,
+    ) -> Path:
         path = self.base / f"registry-{version}-{platform_key}.json"
-        _ = path.write_text(registry_json(version, platform_key), encoding="utf-8")
+        _ = path.write_text(registry_json(version, platform_key, header, digest), encoding="utf-8")
         return path
 
     def run_updater(
@@ -110,7 +150,7 @@ class Sandbox:
         smoke: Callable[[Path, Path], dict[str, object]] = passing_smoke,
         answers: list[str] | None = None,
     ) -> tuple[int, str]:
-        archive = fake_archive(header if header is not None else elf("x86_64"))
+        archive = fake_archive(header)
 
         def download(url: str, destination: Path) -> None:
             self.downloads.append(url)
@@ -308,7 +348,8 @@ class InstallTests(unittest.TestCase):
     def test_archive_for_another_architecture_is_rejected(self) -> None:
         with sandbox() as sb:
             with self.assertRaises(UpdaterError):
-                _ = sb.run_updater("--registry", str(sb.registry("1.4.1")), "--yes", header=elf("aarch64"))
+                registry = sb.registry("1.4.1", header=elf("aarch64"))
+                _ = sb.run_updater("--registry", str(registry), "--yes", header=elf("aarch64"))
             self.assertEqual(sb.release_names(), [])
             self.assertIsNone(sb.current())
 
@@ -352,6 +393,15 @@ class InstallTests(unittest.TestCase):
             self.assertNotIn("--uid", launch)
 
 
+    def test_archive_must_match_the_registry_digest(self) -> None:
+        with sandbox() as sb:
+            for digest, message in (("0" * 64, "sha256 mismatch"), ("", "no valid sha256")):
+                with self.assertRaisesRegex(UpdaterError, message):
+                    _ = sb.run_updater("--registry", str(sb.registry("1.4.1", digest=digest)), "--yes")
+            self.assertEqual(sb.release_names(), [])
+            self.assertIsNone(sb.current())
+
+
 class UnattendedAndPruneTests(unittest.TestCase):
     def test_yes_upgrade_keeps_old_releases_and_rollback_works(self) -> None:
         with sandbox() as sb:
@@ -393,6 +443,15 @@ class ArchiveAndRegistryTests(unittest.TestCase):
         self.assertEqual(release.version, "1.4.1")
         self.assertEqual(release.binaries["linux-aarch64"].args, ("--uid=",))
         self.assertEqual(release.binaries["darwin-aarch64"].args, ())
+
+    def test_plain_http_is_refused(self) -> None:
+        with self.assertRaisesRegex(UpdaterError, "non-https"):
+            with open_http_response("http://example.invalid/agent.json", timeout=1):
+                pass
+
+    def test_registry_digest_is_parsed(self) -> None:
+        release = parse_registry_release(registry_json("1.4.1", digest="AB" * 32))
+        self.assertEqual(release.binaries["linux-x86_64"].sha256, "ab" * 32)
 
     def test_unsafe_archive_members_are_rejected(self) -> None:
         expected = ("agy_acp_server.par", "localharness_external")
