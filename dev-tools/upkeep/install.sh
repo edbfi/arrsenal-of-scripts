@@ -27,6 +27,8 @@ if [ -z "$UV" ]; then
   trap 'rm -f "$script"' EXIT
   curl --proto '=https' --tlsv1.2 -fsSL -o "$script" https://astral.sh/uv/install.sh
   INSTALLER_NO_MODIFY_PATH=1 sh "$script"
+  rm -f "$script"  # the exec below would skip the EXIT trap
+  trap - EXIT
   UV="$HOME/.local/bin/uv"
 fi
 
