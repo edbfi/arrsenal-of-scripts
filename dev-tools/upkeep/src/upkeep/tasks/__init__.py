@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+from upkeep.config import ConfigError
 from upkeep.tasks.base import BinaryTask, Task, TaskContext
 from upkeep.tasks.brew import Brew
 from upkeep.tasks.bun import BunGlobals, Skills
@@ -21,6 +22,7 @@ __all__ = [
     "UnknownTaskError",
     "all_tasks",
     "builtin_tasks",
+    "check_config",
     "is_enabled",
     "select",
     "when_busy",
@@ -58,6 +60,23 @@ def all_tasks(config: Config) -> list[Task]:
             raise UnknownTaskError(f"custom task id {spec.id!r} clashes with a built-in task")
         tasks.append(CustomCommandTask(spec))
     return tasks
+
+
+def check_config(config: Config) -> None:
+    """Reject [tasks.<id>] tables for unknown tasks and keys no task reads.
+
+    The config parser only knows the keys every task shares; a misspelled
+    task-specific key would otherwise be ignored without a word.
+    """
+    tasks = {t.info.id: t for t in all_tasks(config)}
+    for task_id, settings in config.tasks.items():
+        task = tasks.get(task_id)
+        if task is None:
+            known = ", ".join(sorted(tasks))
+            raise ConfigError(f"tasks.{task_id}: unknown task (known: {known})")
+        unknown = sorted(set(settings.extra) - task.info.options)
+        if unknown:
+            raise ConfigError(f"tasks.{task_id}: unknown key(s) {', '.join(unknown)}")
 
 
 def is_enabled(task: Task, config: Config) -> bool:

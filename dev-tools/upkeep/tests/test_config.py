@@ -16,6 +16,7 @@ from upkeep.config import (
     save,
     write_template,
 )
+from upkeep.tasks import check_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -69,6 +70,33 @@ def test_parses_settings() -> None:
 def test_rejects_invalid(document: str, message: str) -> None:
     with pytest.raises(ConfigError, match=message):
         _ = parse(tomllib.loads(document))
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ('[tasks.claude]\nwhen-busy = "skip"', r"tasks\.claude: unknown key\(s\) when-busy"),
+        ("[tasks.bun-globals]\nenable = false", r"tasks\.bun-globals: unknown key\(s\) enable"),
+        ('[tasks.brew]\nensure = ["x"]', "unknown key"),
+        ("[tasks.cluade]\nenabled = false", "tasks.cluade: unknown task"),
+    ],
+)
+def test_task_tables_are_checked_against_the_catalogue(document: str, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        check_config(parse(tomllib.loads(document)))
+
+
+def test_known_task_tables_pass_the_check() -> None:
+    document = """
+        [tasks.bun-globals]
+        ensure = ["a"]
+        [tasks.cloak]
+        enabled = false
+        [[custom]]
+        id = "cloak"
+        run = ["true"]
+    """
+    check_config(parse(tomllib.loads(document)))
 
 
 def test_render_round_trips() -> None:

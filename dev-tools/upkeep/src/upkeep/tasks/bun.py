@@ -62,6 +62,7 @@ class BunGlobals(Task):
                 after=("bun",),
                 resources=frozenset({"bun-global"}),
                 busy_note="node_modules is rewritten in place under running ACPs",
+                options=frozenset({"ensure"}),
             )
         )
 

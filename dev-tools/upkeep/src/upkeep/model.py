@@ -81,6 +81,7 @@ class TaskInfo:
     timeout: float = 900.0
     enabled_by_default: bool = True
     busy_note: str = ""  # why the default busy policy is what it is
+    options: frozenset[str] = frozenset()  # task-specific keys allowed in [tasks.<id>]
 
 
 class Skip(Exception):

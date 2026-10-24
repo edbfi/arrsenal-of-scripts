@@ -15,16 +15,24 @@ from upkeep.config import Config, OutputMode, SelfUpdateMode
 from upkeep.engine import Engine, Options, Reporter
 from upkeep.model import Mode, RunSummary
 from upkeep.report import Dashboard, Tee, Transcript
-from upkeep.tasks import Task, all_tasks, select
+from upkeep.tasks import Task, all_tasks, check_config, select
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
+    from pathlib import Path
 
     from rich.console import Console
 
     from upkeep.host import Host
 
 EXIT_LOCKED = 75  # EX_TEMPFAIL: another run holds the lock
+
+
+def load_config(path: Path) -> Config:
+    """Parse the config file and check it against the task catalogue."""
+    loaded = config_mod.load(path)
+    check_config(loaded)
+    return loaded
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +84,7 @@ class App:
         return all_tasks(self.config)
 
     def reload(self) -> None:
-        self.config = config_mod.load(self.host.config_file)
+        self.config = load_config(self.host.config_file)
 
     def save(self, new: Config) -> None:
         config_mod.save(new, self.host.config_file)
