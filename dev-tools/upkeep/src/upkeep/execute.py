@@ -10,9 +10,11 @@ import codecs
 import os
 import re
 import signal
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 
 type LineSink = Callable[[str], None]
 
@@ -101,36 +103,65 @@ async def run(
         lines.append(line)
         sink(line)
 
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE if separate_stderr else asyncio.subprocess.STDOUT,
-        env=dict(env),
-        cwd=cwd,
-        start_new_session=True,
-    )
-    try:
-        if stdin is not None and proc.stdin is not None:
-            proc.stdin.write(stdin)
-            await proc.stdin.drain()
-            proc.stdin.close()
-        assert proc.stdout is not None  # requested with PIPE above
-        readers = [asyncio.create_task(_pump(proc.stdout, LineSplitter(collect)))]
-        if proc.stderr is not None:
-            readers.append(asyncio.create_task(_pump(proc.stderr, LineSplitter(errors.append))))
+    # Own the output pipes separately: on older Python releases, proc.wait()
+    # waits for PIPE EOF as well as process exit, so an inherited daemon pipe
+    # would prevent us from ever starting the bounded drain below.
+    async with AsyncExitStack() as pipes:
+        stdout, stdout_writer = await pipes.enter_async_context(_output_pipe())
+        stderr: asyncio.StreamReader | None = None
+        stderr_writer: BinaryIO | int = asyncio.subprocess.STDOUT
+        if separate_stderr:
+            stderr, stderr_writer = await pipes.enter_async_context(_output_pipe())
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+            stdout=stdout_writer,
+            stderr=stderr_writer,
+            env=dict(env),
+            cwd=cwd,
+            start_new_session=True,
+        )
+        stdout_writer.close()
+        if not isinstance(stderr_writer, int):
+            stderr_writer.close()
         try:
-            returncode = await proc.wait()
-            # A daemon the command left behind may keep the pipe open forever;
-            # collect what is buffered, then stop listening (it keeps running).
-            _ = await asyncio.wait(readers, timeout=DRAIN_SECONDS)
-        finally:
-            for reader in readers:
-                _ = reader.cancel()
-    except BaseException:
-        await _terminate(proc)
-        raise
+            if stdin is not None and proc.stdin is not None:
+                proc.stdin.write(stdin)
+                await proc.stdin.drain()
+                proc.stdin.close()
+            readers = [asyncio.create_task(_pump(stdout, LineSplitter(collect)))]
+            if stderr is not None:
+                readers.append(asyncio.create_task(_pump(stderr, LineSplitter(errors.append))))
+            try:
+                returncode = await proc.wait()
+                # A daemon the command left behind may keep the pipe open forever;
+                # collect what is buffered, then stop listening (it keeps running).
+                _ = await asyncio.wait(readers, timeout=DRAIN_SECONDS)
+            finally:
+                for reader in readers:
+                    _ = reader.cancel()
+                _ = await asyncio.gather(*readers, return_exceptions=True)
+        except BaseException:
+            await _terminate(proc)
+            raise
     return CommandResult(args, returncode, tuple(lines), tuple(errors))
+
+
+@asynccontextmanager
+async def _output_pipe() -> AsyncGenerator[tuple[asyncio.StreamReader, BinaryIO]]:
+    read_fd, write_fd = os.pipe()
+    with (
+        os.fdopen(read_fd, "rb", buffering=0) as read_pipe,
+        os.fdopen(write_fd, "wb", buffering=0) as write_pipe,
+    ):
+        reader = asyncio.StreamReader()
+        transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+            lambda: asyncio.StreamReaderProtocol(reader), read_pipe
+        )
+        try:
+            yield reader, write_pipe
+        finally:
+            transport.close()
 
 
 async def _pump(stream: asyncio.StreamReader, splitter: LineSplitter) -> None:

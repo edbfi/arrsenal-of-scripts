@@ -97,16 +97,22 @@ def test_timeout_kills_process_group(tmp_path: Path) -> None:
     assert not marker.exists()  # the background grandchild died with the group
 
 
-def test_leftover_daemon_does_not_hang_a_finished_command() -> None:
+@pytest.mark.parametrize("separate_stderr", [False, True])
+def test_leftover_daemon_does_not_hang_a_finished_command(separate_stderr: bool) -> None:
     started = time.monotonic()
     result = asyncio.run(
         execute.run(
-            ["sh", "-c", "sleep 30 & echo started"],  # the daemon keeps stdout open
+            # The daemon keeps both output pipes open. Keep the leader alive briefly
+            # so run() starts waiting before it exits, exposing the pipe/exit race.
+            ["sh", "-c", "sleep 30 & echo started; echo error >&2; sleep 0.1"],
             env=dict(os.environ),
             sink=lambda _line: None,
+            separate_stderr=separate_stderr,
         )
     )
-    assert result.output == ("started",)
+    assert result.returncode == 0
+    assert result.output == (("started",) if separate_stderr else ("started", "error"))
+    assert result.stderr == (("error",) if separate_stderr else ())
     assert time.monotonic() - started < execute.DRAIN_SECONDS + 2
 
 

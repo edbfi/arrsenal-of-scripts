@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">arrsenal-of-scripts</title>
+  <desc id="desc">A terminal window inside a toolbox, with a command prompt and cursor.</desc>
+  <rect x="12" y="12" width="232" height="232" rx="48" fill="#142d3a" stroke="#73949f" stroke-width="2"/>
+  <path d="M100 71V57a10 10 0 0 1 10-10h36a10 10 0 0 1 10 10v14" fill="none" stroke="#7ee0c3" stroke-width="10"/>
+  <rect x="43" y="72" width="170" height="139" rx="17" fill="#203f4c" stroke="#7ee0c3" stroke-width="6"/>
+  <path d="M46 110h164" stroke="#7ee0c3" stroke-width="4"/>
+  <g fill="#7ee0c3">
+    <circle cx="64" cy="92" r="4"/>
+    <circle cx="79" cy="92" r="4"/>
+    <circle cx="94" cy="92" r="4"/>
+  </g>
+  <path d="m76 137 22 20-22 20m42 0h29" fill="none" stroke="#f4f7ed" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="173" y="126" width="15" height="15" rx="3" fill="#eebd75"/>
+  <rect x="173" y="151" width="15" height="15" rx="3" fill="#7ee0c3"/>
+  <rect x="173" y="176" width="15" height="15" rx="3" fill="#73949f"/>
+</svg>
