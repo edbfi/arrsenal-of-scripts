@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/svg/arrsenal-of-scripts-logo.svg" alt="arrsenal-of-scripts logo" width="256" height="256">
+  <img src="assets/svg/arrsenal-of-scripts-logo.svg" alt="arrsenal-of-scripts logo" width="160" height="160">
 </p>
 
 <h1 align="center">arrsenal-of-scripts</h1>
@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/edbfi/arrsenal-of-scripts/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=flat" alt="License: AGPL-3.0-only">
+    <img src="https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat" alt="License: AGPL-3.0-or-later">
   </a>
   <a href="https://github.com/python/cpython" title="CPython source repository">
     <img src="https://img.shields.io/badge/Python-3776AB?style=flat&amp;logo=python&amp;logoColor=white" alt="Python">
@@ -53,4 +53,11 @@ These scripts were written for personal use and might not suit every setup. Use 
 
 ## ⚖️ License
 
-This project is licensed under the AGPLv3 License - see the LICENSE file for details.
+Unless otherwise noted, the original code in this repository is free software: you
+may redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3 of
+the License, or (at your option) any later version (`AGPL-3.0-or-later`). See
+[LICENSE](LICENSE) for the full license text.
+
+Third-party and vendored material retains its existing licenses and notices; this
+grant does not replace those terms or revoke earlier grants.
