@@ -70,4 +70,6 @@ Both scripts include log functions to provide debug and informational messages w
 
 ## License
 
-This project is licensed under the AGPLv3 License. See the [LICENSE](../LICENSE) file for details.
+The original code is licensed under the GNU Affero General Public License, version 3
+or (at your option) any later version (`AGPL-3.0-or-later`). See the
+[project license notice](../README.md) and [LICENSE](../LICENSE) for details.

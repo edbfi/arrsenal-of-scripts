@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Keep a host's AI and developer CLI toolchain installed and up to date"
 readme = "README.md"
 requires-python = ">=3.14"
-license = "AGPL-3.0-only"
+license = "AGPL-3.0-or-later"
 dependencies = [
     "questionary>=2.1.1",
     "rich>=15.0.0",
