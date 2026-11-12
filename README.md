@@ -1,6 +1,25 @@
-# Arrsenal of Scripts
+<p align="center">
+  <img src="assets/svg/arrsenal-of-scripts-logo.svg" alt="arrsenal-of-scripts logo" width="256" height="256">
+</p>
 
-*A bunch of scripts for server stuff, 'arr' apps, and whatever else I needed along the way.*
+<h1 align="center">arrsenal-of-scripts</h1>
+
+<p align="center"><strong>Scripts for server management, Servarr automation, and developer tools.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/edbfi/arrsenal-of-scripts/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/License-AGPL--3.0--only-blue?style=flat" alt="License: AGPL-3.0-only">
+  </a>
+  <a href="https://github.com/python/cpython" title="CPython source repository">
+    <img src="https://img.shields.io/badge/Python-3776AB?style=flat&amp;logo=python&amp;logoColor=white" alt="Python">
+  </a>
+  <a href="https://git.savannah.gnu.org/cgit/bash.git/" title="GNU Bash source repository">
+    <img src="https://img.shields.io/badge/Bash-4EAA25?style=flat&amp;logo=gnubash&amp;logoColor=white" alt="Bash">
+  </a>
+  <a href="https://sourceforge.net/p/zsh/code/" title="Zsh source repository">
+    <img src="https://img.shields.io/badge/Zsh-F15A24?style=flat&amp;logo=zsh&amp;logoColor=white" alt="Zsh">
+  </a>
+</p>
 
 ## 🚀 About the Repo
 
@@ -33,7 +52,5 @@ image matching; it is not an edbfi image-namespace migration tool.
 These scripts were written for personal use and might not suit every setup. Use at your own risk and feel free to modify them as needed.
 
 ## ⚖️ License
-
-[![GNU AGPLv3 Image](https://www.gnu.org/graphics/agplv3-155x51.png)](https://www.gnu.org/licenses/agpl-3.0.en.html)
 
 This project is licensed under the AGPLv3 License - see the LICENSE file for details.
