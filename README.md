@@ -19,6 +19,7 @@
   <a href="https://sourceforge.net/p/zsh/code/" title="Zsh source repository">
     <img src="https://img.shields.io/badge/Zsh-F15A24?style=flat&amp;logo=zsh&amp;logoColor=white" alt="Zsh">
   </a>
+  <a href="https://github.com/edbfi/arrsenal-of-scripts/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/edbfi/arrsenal-of-scripts/ci.yml?branch=main&amp;event=push&amp;label=CI&amp;style=flat" alt="CI"></a>
 </p>
 
 ## 🚀 About the Repo
