@@ -1,21 +1,15 @@
 """Tasks that maintain something other than a CLI binary."""
 
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, override
 
-from upkeep import layout
-from upkeep.config import BusyPolicy
-from upkeep.execute import CommandError
-from upkeep.model import Probe, Skip, TaskInfo
+from upkeep.model import Probe, TaskInfo
 from upkeep.procs import ProcMatcher, describe
 from upkeep.sources import classify
-from upkeep.tasks.base import Task, TaskContext, parse_version
+from upkeep.tasks.base import Task, TaskContext
 
 if TYPE_CHECKING:
     from upkeep.host import Host
-
-ACP_LOCK_BUSY = 75  # update_antigravity_acp.py: another updater holds the lock
 
 
 class AgentBrowser(Task):
@@ -62,73 +56,6 @@ class AgentBrowser(Task):
     async def update(self, ctx: TaskContext) -> str | None:
         _ = await ctx.run("agent-browser", "install")
         return None
-
-
-class T3AntigravityAcp(Task):
-    """The Antigravity ACP build T3 Code launches, via the bundled updater.
-
-    Releases are installed side by side and activated by swapping a symlink;
-    nothing in use is ever deleted, so running sessions are unaffected.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(
-            TaskInfo(
-                id="t3-antigravity-acp",
-                title="t3 antigravity acp",
-                summary="update_antigravity_acp.py --yes (T3 Code custom tool)",
-                when_busy=BusyPolicy.ALLOW,
-                busy_note="releases are side by side; activation swaps a symlink",
-            )
-        )
-
-    @staticmethod
-    def install_root(host: Host) -> Path:
-        return host.home / ".t3" / "custom-tools"
-
-    @override
-    def probe(self, host: Host) -> Probe:
-        if not layout.ACP_UPDATER.is_file():
-            return Probe.missing(f"updater not found at {layout.ACP_UPDATER}")
-        launcher = self.install_root(host) / "antigravity-acp"
-        if not launcher.exists():
-            return Probe.missing("not set up (run `upkeep install t3-antigravity-acp`)")
-        return Probe.installed(launcher)
-
-    @override
-    def busy_matcher(self, host: Host) -> ProcMatcher:
-        return ProcMatcher(dirs=(self.install_root(host) / "releases",))
-
-    @override
-    async def version(self, ctx: TaskContext) -> str | None:
-        current = self.install_root(ctx.host) / "antigravity-acp-current"
-        if not current.is_symlink():
-            return None
-        return parse_version(current.readlink().name.split("-", 1)[0])  # <version>-<platform>
-
-    async def _updater(self, ctx: TaskContext) -> str | None:
-        args = ["--yes"] if not ctx.dry_run else ["--check-only"]
-        result = await ctx.run(
-            sys.executable, layout.ACP_UPDATER, *args, check=False, mutates=False
-        )
-        if result.returncode == ACP_LOCK_BUSY:
-            raise Skip("another ACP updater is running")
-        if not result.ok:
-            raise CommandError(result)
-        return None
-
-    @override
-    async def update(self, ctx: TaskContext) -> str | None:
-        return await self._updater(ctx)
-
-    @property
-    @override
-    def installable(self) -> bool:
-        return layout.ACP_UPDATER.is_file()
-
-    @override
-    async def install(self, ctx: TaskContext) -> str | None:
-        return await self._updater(ctx)
 
 
 class UvTools(Task):
