@@ -74,7 +74,8 @@ class T3AntigravityAcp(Task):
     """The Antigravity ACP build T3 Code launches, via the bundled updater.
 
     Releases are installed side by side and activated by swapping a symlink;
-    nothing in use is ever deleted, so running sessions are unaffected.
+    nothing in use is ever deleted, so running sessions are unaffected. After
+    updating, releases other than current and previous are pruned unless running.
     """
 
     def __init__(self) -> None:
@@ -140,10 +141,17 @@ class T3AntigravityAcp(Task):
                 ctx.log("keeping old releases: an ACP updater is running")
                 return None
             # Read under the lock: an updater may have just activated a release.
+            if not (root / ACP_CURRENT).is_dir():
+                ctx.log("keeping old releases: no active release")
+                return None
             keep = {(root / link).resolve() for link in (ACP_CURRENT, ACP_PREVIOUS)}
             procs = ctx.processes()
             for release in sorted((root / "releases").glob("*/")):
-                if release.name.startswith(".") or release.resolve() in keep:
+                if (
+                    release.name.startswith(".")
+                    or release.is_symlink()
+                    or release.resolve() in keep
+                ):
                     continue
                 if procs.matching(ProcMatcher(dirs=(release, release.resolve()))):
                     ctx.log(f"keeping {release.name}: still running")

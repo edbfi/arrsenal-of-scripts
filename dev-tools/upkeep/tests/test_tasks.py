@@ -151,6 +151,19 @@ def test_acp_prune_keeps_current_previous_running_and_staging(host: Host) -> Non
     assert remaining(root) == [".staging-1.6.0-abc", "1.4.0-x", "1.4.1-x", "1.5.0-x"]
 
 
+def test_acp_prune_keeps_everything_without_an_active_release(host: Host) -> None:
+    root = acp_root(host, "1.4.0-x", "1.5.0-x", current="1.5.0-x", previous="1.4.0-x")
+    (root / "releases" / "1.3.0-x").symlink_to(root / "releases" / "1.4.0-x")
+    (root / "antigravity-acp-current").unlink()
+    (root / "antigravity-acp-current").symlink_to("releases/gone")
+    assert T3AntigravityAcp().prune(FakeContext(host)) is None
+    assert remaining(root) == [".staging-1.6.0-abc", "1.3.0-x", "1.4.0-x", "1.5.0-x"]
+    (root / "antigravity-acp-current").unlink()
+    (root / "antigravity-acp-current").symlink_to("releases/1.4.0-x")
+    assert T3AntigravityAcp().prune(FakeContext(host)) == "pruned 1 old release(s)"
+    assert remaining(root) == [".staging-1.6.0-abc", "1.3.0-x", "1.4.0-x"]
+
+
 def test_acp_prune_waits_for_a_running_updater(host: Host) -> None:
     root = acp_root(host, "1.4.0-x", "1.4.1-x", "1.5.0-x", current="1.5.0-x", previous="1.4.1-x")
     fd = os.open(root / ".antigravity-acp.lock", os.O_RDWR | os.O_CREAT, 0o600)
