@@ -173,7 +173,9 @@ def test_acp_prune_waits_for_a_running_updater(host: Host) -> None:
     finally:
         os.close(fd)
     assert "1.4.0-x" in remaining(root)
-    assert T3AntigravityAcp().prune(FakeContext(host, dry_run=True)) is None
+    ctx = FakeContext(host, dry_run=True)
+    assert T3AntigravityAcp().prune(ctx) is None
+    assert any("would remove 1.4.0-x" in line for line in ctx.lines)
     assert "1.4.0-x" in remaining(root)
 
 
