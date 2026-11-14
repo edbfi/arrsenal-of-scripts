@@ -12,6 +12,7 @@ from upkeep.execute import CommandResult
 from upkeep.procs import Proc, ProcessTable
 from upkeep.tasks.base import TaskContext
 from upkeep.tasks.brew import Brew
+from upkeep.tasks.extras import T3AntigravityAcp
 from upkeep.tasks.standalone import Agy, Codex
 
 if TYPE_CHECKING:
@@ -125,6 +126,57 @@ def test_codex_prune_skips_a_root_whose_installer_runs(host: Host) -> None:
         os.close(fd)
     assert remaining(root) == ["0.1", "0.2"]
     assert Codex().prune(FakeContext(host)) == "pruned 1 old release(s)"
+
+
+# ----------------------------------------------------------- antigravity acp
+
+
+def acp_root(host: Host, *releases: str, current: str, previous: str) -> Path:
+    root = T3AntigravityAcp.install_root(host)
+    for name in releases:
+        (root / "releases" / name).mkdir(parents=True)
+        _ = (root / "releases" / name / "agy_acp_server.par").write_text("")
+    (root / "releases" / ".staging-1.6.0-abc").mkdir()
+    (root / "antigravity-acp-current").symlink_to(f"releases/{current}")
+    (root / "antigravity-acp-previous").symlink_to(f"releases/{previous}")
+    return root
+
+
+def test_acp_prune_keeps_current_previous_running_and_staging(host: Host) -> None:
+    root = acp_root(
+        host, "1.3.0-x", "1.4.0-x", "1.4.1-x", "1.5.0-x", current="1.5.0-x", previous="1.4.1-x"
+    )
+    ctx = FakeContext(host, procs=[running(root / "releases/1.4.0-x/agy_acp_server.par")])
+    assert T3AntigravityAcp().prune(ctx) == "pruned 1 old release(s)"
+    assert remaining(root) == [".staging-1.6.0-abc", "1.4.0-x", "1.4.1-x", "1.5.0-x"]
+
+
+def test_acp_prune_keeps_everything_without_an_active_release(host: Host) -> None:
+    root = acp_root(host, "1.4.0-x", "1.5.0-x", current="1.5.0-x", previous="1.4.0-x")
+    (root / "releases" / "1.3.0-x").symlink_to(root / "releases" / "1.4.0-x")
+    (root / "antigravity-acp-current").unlink()
+    (root / "antigravity-acp-current").symlink_to("releases/gone")
+    assert T3AntigravityAcp().prune(FakeContext(host)) is None
+    assert remaining(root) == [".staging-1.6.0-abc", "1.3.0-x", "1.4.0-x", "1.5.0-x"]
+    (root / "antigravity-acp-current").unlink()
+    (root / "antigravity-acp-current").symlink_to("releases/1.4.0-x")
+    assert T3AntigravityAcp().prune(FakeContext(host)) == "pruned 1 old release(s)"
+    assert remaining(root) == [".staging-1.6.0-abc", "1.3.0-x", "1.4.0-x"]
+
+
+def test_acp_prune_waits_for_a_running_updater(host: Host) -> None:
+    root = acp_root(host, "1.4.0-x", "1.4.1-x", "1.5.0-x", current="1.5.0-x", previous="1.4.1-x")
+    fd = os.open(root / ".antigravity-acp.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        assert T3AntigravityAcp().prune(FakeContext(host)) is None
+    finally:
+        os.close(fd)
+    assert "1.4.0-x" in remaining(root)
+    ctx = FakeContext(host, dry_run=True)
+    assert T3AntigravityAcp().prune(ctx) is None
+    assert any("would remove 1.4.0-x" in line for line in ctx.lines)
+    assert "1.4.0-x" in remaining(root)
 
 
 # -------------------------------------------------------------------- agy

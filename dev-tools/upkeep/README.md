@@ -16,6 +16,7 @@ Linux, without disturbing sessions that are using them. It replaces the
 | `bun-globals` | installs the ACP adapters if missing, `bun update -g --latest` | **skipped** |
 | `skills` | `bunx skills update -g` | n/a |
 | `agent-browser` | `agent-browser install` (browser for the current CLI) | **skipped** |
+| `t3-antigravity-acp` | [`../t3-antigravity-acp`](../t3-antigravity-acp/README.md) `--yes`, then deletes releases nothing runs (keeps current and previous) | updated (versioned dirs + symlink) |
 | `uv-tools` *(off by default)* | `uv tool upgrade`, per tool | each tool in use is skipped |
 
 `upkeep list` prints the same table for the current config.
@@ -34,7 +35,8 @@ at that clone.
 
 Once every host runs upkeep, the `update-ai` / `codex-update` /
 `_codex_prune_releases` functions can come out of `~/.zshrc` (radxa:
-`~/.config/zsh/ai-tools.zsh`).
+`~/.config/zsh/ai-tools.zsh`), and `~/.t3/custom-tools/update_antigravity_acp.py`
+is no longer needed (keep the rest of `~/.t3/custom-tools`: that is the install).
 
 ## Use
 
