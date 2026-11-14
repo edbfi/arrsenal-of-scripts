@@ -210,7 +210,7 @@ class Codex(BinaryTask):
             current = root / "current"
             if not current.exists():
                 continue
-            with _try_lock(root / "install.lock") as locked:
+            with try_lock(root / "install.lock") as locked:
                 if not locked:
                     ctx.log(f"keeping {root.name} releases: its installer is running")
                     continue
@@ -237,7 +237,7 @@ class Codex(BinaryTask):
 
 
 @contextlib.contextmanager
-def _try_lock(path: Path) -> Generator[bool]:
+def try_lock(path: Path) -> Generator[bool]:
     """Non-blocking flock on an installer's lock file; yields whether we got it."""
     if not path.exists():
         yield True

@@ -1,15 +1,27 @@
 """Tasks that maintain something other than a CLI binary."""
 
+import shutil
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, override
 
-from upkeep.model import Probe, TaskInfo
+from upkeep import layout
+from upkeep.config import BusyPolicy
+from upkeep.execute import CommandError
+from upkeep.model import Probe, Skip, TaskInfo
 from upkeep.procs import ProcMatcher, describe
 from upkeep.sources import classify
-from upkeep.tasks.base import Task, TaskContext
+from upkeep.tasks.base import Task, TaskContext, parse_version
+from upkeep.tasks.standalone import try_lock
 
 if TYPE_CHECKING:
     from upkeep.host import Host
+
+ACP_LOCK_BUSY = 75  # update_antigravity_acp.py: another updater holds the lock
+# Names the updater uses under its install root.
+ACP_LOCK = ".antigravity-acp.lock"
+ACP_CURRENT = "antigravity-acp-current"
+ACP_PREVIOUS = "antigravity-acp-previous"
 
 
 class AgentBrowser(Task):
@@ -56,6 +68,102 @@ class AgentBrowser(Task):
     async def update(self, ctx: TaskContext) -> str | None:
         _ = await ctx.run("agent-browser", "install")
         return None
+
+
+class T3AntigravityAcp(Task):
+    """The Antigravity ACP build T3 Code launches, via the bundled updater.
+
+    Releases are installed side by side and activated by swapping a symlink;
+    nothing in use is ever deleted, so running sessions are unaffected.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            TaskInfo(
+                id="t3-antigravity-acp",
+                title="t3 antigravity acp",
+                summary="update_antigravity_acp.py --yes, then prune unused releases",
+                when_busy=BusyPolicy.ALLOW,
+                busy_note="releases are side by side; activation swaps a symlink",
+            )
+        )
+
+    @staticmethod
+    def install_root(host: Host) -> Path:
+        return host.home / ".t3" / "custom-tools"
+
+    @override
+    def probe(self, host: Host) -> Probe:
+        if not layout.ACP_UPDATER.is_file():
+            return Probe.missing(f"updater not found at {layout.ACP_UPDATER}")
+        launcher = self.install_root(host) / "antigravity-acp"
+        if not launcher.exists():
+            return Probe.missing("not set up (run `upkeep install t3-antigravity-acp`)")
+        return Probe.installed(launcher)
+
+    @override
+    def busy_matcher(self, host: Host) -> ProcMatcher:
+        return ProcMatcher(dirs=(self.install_root(host) / "releases",))
+
+    @override
+    async def version(self, ctx: TaskContext) -> str | None:
+        current = self.install_root(ctx.host) / ACP_CURRENT
+        if not current.is_symlink():
+            return None
+        return parse_version(current.readlink().name.split("-", 1)[0])  # <version>-<platform>
+
+    async def _updater(self, ctx: TaskContext) -> str | None:
+        args = ["--yes"] if not ctx.dry_run else ["--check-only"]
+        result = await ctx.run(
+            sys.executable, layout.ACP_UPDATER, *args, check=False, mutates=False
+        )
+        if result.returncode == ACP_LOCK_BUSY:
+            raise Skip("another ACP updater is running")
+        if not result.ok:
+            raise CommandError(result)
+        return None
+
+    @override
+    async def update(self, ctx: TaskContext) -> str | None:
+        _ = await self._updater(ctx)
+        return self.prune(ctx)
+
+    def prune(self, ctx: TaskContext) -> str | None:
+        """Delete releases other than current and previous, unless still running.
+
+        The updater never prunes on its own, so every ACP version would stay.
+        """
+        root = self.install_root(ctx.host)
+        removed: list[str] = []
+        with try_lock(root / ACP_LOCK) as locked:
+            if not locked:
+                ctx.log("keeping old releases: an ACP updater is running")
+                return None
+            # Read under the lock: an updater may have just activated a release.
+            keep = {(root / link).resolve() for link in (ACP_CURRENT, ACP_PREVIOUS)}
+            procs = ctx.processes()
+            for release in sorted((root / "releases").glob("*/")):
+                if release.name.startswith(".") or release.resolve() in keep:
+                    continue
+                if procs.matching(ProcMatcher(dirs=(release, release.resolve()))):
+                    ctx.log(f"keeping {release.name}: still running")
+                    continue
+                if ctx.dry_run:
+                    ctx.log(f"[dry-run] would remove {release.name}")
+                    continue
+                ctx.log(f"removing old release {release.name}")
+                shutil.rmtree(release)
+                removed.append(release.name)
+        return f"pruned {len(removed)} old release(s)" if removed else None
+
+    @property
+    @override
+    def installable(self) -> bool:
+        return layout.ACP_UPDATER.is_file()
+
+    @override
+    async def install(self, ctx: TaskContext) -> str | None:
+        return await self._updater(ctx)
 
 
 class UvTools(Task):

@@ -7,7 +7,7 @@ from upkeep.tasks.base import BinaryTask, Task, TaskContext
 from upkeep.tasks.brew import Brew
 from upkeep.tasks.bun import BunGlobals, Skills
 from upkeep.tasks.custom import CustomCommandTask
-from upkeep.tasks.extras import AgentBrowser, UvTools
+from upkeep.tasks.extras import AgentBrowser, T3AntigravityAcp, UvTools
 from upkeep.tasks.standalone import Agy, Bun, Claude, Codex, Prek, Ruff, Uv
 
 if TYPE_CHECKING:
@@ -47,6 +47,7 @@ def builtin_tasks() -> list[Task]:
         BunGlobals(),
         Skills(),
         AgentBrowser(),
+        T3AntigravityAcp(),
         UvTools(),
     ]
 
