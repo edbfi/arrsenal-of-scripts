@@ -223,7 +223,11 @@ class T3AntigravityAcpGateway(Task):
     @override
     async def version(self, ctx: TaskContext) -> str | None:
         target = self.target(ctx.host)
-        return _digest(_body(target)) if target.is_file() else None
+        if not target.is_file():
+            return None
+        # The interpreter counts too, so switching only it reports an update.
+        interpreter = _shebang_interpreter(target) or ""
+        return _digest(interpreter.encode() + b"\n" + _body(target))
 
     @override
     async def update(self, ctx: TaskContext) -> str | None:

@@ -343,6 +343,17 @@ def test_gateway_resolves_a_bare_configured_name(host: Host) -> None:
     assert ctx.commands == []
 
 
+def test_gateway_version_changes_with_the_interpreter(host: Host) -> None:
+    root = gateway_host(host, installed=f"#!{PYTHON} -I\n{SHIM_BODY}")
+    task, ctx = T3AntigravityAcpGateway(), FakeContext(host)
+    before = asyncio.run(task.version(ctx))
+    _ = (root / "antigravity-acp-gateway").write_text(f"#!/usr/bin/python3 -I\n{SHIM_BODY}")
+    after = asyncio.run(task.version(ctx))
+    assert before is not None
+    assert after is not None
+    assert before != after
+
+
 @pytest.mark.usefixtures("shim")
 def test_gateway_fails_without_a_usable_python(host: Host) -> None:
     _ = gateway_host(host, installed=f"#!{PYTHON} -I\nold\n")
