@@ -8,7 +8,6 @@ import io
 import json
 import os
 import re
-import shutil
 import socket
 import subprocess
 import sys
@@ -47,6 +46,9 @@ from antigravity_acp_gateway import (
 )
 
 SCRIPT = Path(__file__).resolve().parent.parent / "antigravity_acp_gateway.py"
+# install() refuses a virtualenv interpreter, so tests install with the base one
+# even when they run from a venv.
+BASE_PYTHON = str(Path(sys.base_prefix) / "bin" / f"python{sys.version_info.major}.{sys.version_info.minor}")
 CARBON = Family("gemini-4-carbon", "Gemini 4 Carbon", ("low", "medium", "high"))
 HYDROGEN = Family("gemini-4-hydrogen", "Gemini 4 Hydrogen", ("low", "medium", "high", "xhigh"))
 ARGON = PlainModel("gemini-4-argon-high", "Gemini 4 Argon")
@@ -502,7 +504,7 @@ class MainDispatchTest(unittest.TestCase):
             root = Path(tmp)
             _ = (root / LAUNCHER_NAME).write_text("#!/bin/sh\n", encoding="utf-8")
             with contextlib.redirect_stdout(io.StringIO()):
-                code = main(["--python", sys.executable, "--install", "--install-root", str(root)])
+                code = main(["--python", BASE_PYTHON, "--install", "--install-root", str(root)])
             self.assertEqual(code, 0)
             self.assertTrue((root / INSTALL_NAME).exists())
 
@@ -537,7 +539,7 @@ class ShimSandbox:
         launcher = root / LAUNCHER_NAME
         _ = launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{agent}" "$@"\n', encoding="utf-8")
         launcher.chmod(0o755)
-        self.shim: Path = install(sys.executable, root)
+        self.shim: Path = install(BASE_PYTHON, root)
         self.home: Path = base / "gemini-home"
         self.log: Path = base / "agent.log"
         self.env: dict[str, str] = {
@@ -582,10 +584,22 @@ class InstallTest(unittest.TestCase):
             spaced = root / "with space"
             spaced.mkdir()
             python = spaced / "python3"
-            python.symlink_to(sys.executable)
+            python.symlink_to(BASE_PYTHON)
             with self.assertRaises(SystemExit) as raised:
                 _ = install(str(python), root)
             self.assertIn("whitespace", str(raised.exception.code))
+            self.assertFalse((root / INSTALL_NAME).exists())
+
+
+    def test_virtualenv_interpreter_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _ = (root / LAUNCHER_NAME).write_text("#!/bin/sh\n", encoding="utf-8")
+            venv = root / "venv"
+            _ = subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True)
+            with self.assertRaises(SystemExit) as raised:
+                _ = install(str(venv / "bin" / "python"), root)
+            self.assertIn("virtualenv", str(raised.exception.code))
             self.assertFalse((root / INSTALL_NAME).exists())
 
 
@@ -594,7 +608,7 @@ class ProxyProcessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             box = ShimSandbox(Path(tmp))
             first_line = box.shim.read_text(encoding="utf-8").split("\n", 1)[0]
-            self.assertEqual(first_line, f"#!{shutil.which(sys.executable) or sys.executable} -I")
+            self.assertEqual(first_line, f"#!{BASE_PYTHON} -I")
             self.assertTrue(os.access(box.shim, os.X_OK))
             self.assertEqual(box.shim.name, INSTALL_NAME)
 

@@ -120,8 +120,11 @@ key, keep `GOOGLE_GEMINI_BASE_URL`, and set *Binary path* to
 | `AGY_LLM_GATEWAY_URL`, `AGY_LLM_GATEWAY_API_KEY` | Use these instead of the T3 base URL and key. |
 
 `--catalog` prints what discovery finds for the current environment
-(`--refresh` bypasses the cache). The installed copy does not update itself;
-rerun `--install` after pulling changes.
+(`--refresh` bypasses the cache). The installed copy does not update itself:
+on a host with [upkeep](../upkeep/README.md), the opt-in
+`t3-antigravity-acp-gateway` task reinstalls it whenever this file changes;
+elsewhere, rerun `--install` after pulling changes. `--install` refuses a
+virtualenv interpreter, whose removal would break the shebang.
 
 ## Development checks
 

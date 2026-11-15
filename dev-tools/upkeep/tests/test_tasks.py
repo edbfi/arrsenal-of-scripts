@@ -4,15 +4,21 @@ import asyncio
 import fcntl
 import json
 import os
+import tomllib
 from dataclasses import replace
 from typing import TYPE_CHECKING, override
 
-from upkeep.config import TaskSettings
+import pytest
+
+from upkeep import layout
+from upkeep.config import TaskSettings, parse
 from upkeep.execute import CommandResult
+from upkeep.model import Presence, Skip, TaskFailed
 from upkeep.procs import Proc, ProcessTable
+from upkeep.tasks import builtin_tasks, check_config, is_enabled
 from upkeep.tasks.base import TaskContext
 from upkeep.tasks.brew import Brew
-from upkeep.tasks.extras import T3AntigravityAcp
+from upkeep.tasks.extras import USABLE_PYTHON, T3AntigravityAcp, T3AntigravityAcpGateway
 from upkeep.tasks.standalone import Agy, Codex
 
 if TYPE_CHECKING:
@@ -245,3 +251,134 @@ def test_brew_force_upgrades_packages_in_use(host: Host, tmp_path: Path) -> None
     ctx = brew_context(host, tmp_path, force=True)
     _ = asyncio.run(Brew().update(ctx))
     assert ("brew", "upgrade", "--formula", "busy", "idle") in ctx.commands
+
+
+# ------------------------------------------------------- antigravity gateway
+
+SHIM_BODY = "print('shim v2')\n"
+PYTHON = "/opt/python/bin/python3"
+
+
+@pytest.fixture
+def shim(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The checkout's copy of the gateway shim."""
+    source = tmp_path / "antigravity_acp_gateway.py"
+    _ = source.write_text("#!/usr/bin/env python3\n" + SHIM_BODY)
+    monkeypatch.setattr(layout, "ACP_GATEWAY", source)
+    return source
+
+
+def gateway_host(host: Host, *, installed: str | None = None) -> Path:
+    """An ACP install root, optionally with a shim already installed."""
+    root = T3AntigravityAcp.install_root(host)
+    root.mkdir(parents=True)
+    _ = (root / "antigravity-acp").write_text("#!/bin/sh\n")
+    if installed is not None:
+        _ = (root / "antigravity-acp-gateway").write_text(installed)
+    return root
+
+
+def gateway_context(host: Host, *usable: str, python: str | None = None) -> FakeContext:
+    ctx = FakeContext(host, replies={(p, "-c", USABLE_PYTHON): "True" for p in usable})
+    if python is not None:
+        ctx.settings = TaskSettings(extra={"python": python})
+    return ctx
+
+
+def install_command(source: Path, root: Path, python: str) -> tuple[str, ...]:
+    return (python, "-I", str(source), "--install", "--python", python, "--install-root", str(root))
+
+
+def test_gateway_probe_reports_each_missing_piece(host: Host, shim: Path) -> None:
+    task = T3AntigravityAcpGateway()
+    assert "ACP launcher" in task.probe(host).note
+    root = gateway_host(host)
+    probe = task.probe(host)
+    assert probe.presence is Presence.MISSING
+    assert "upkeep install t3-antigravity-acp-gateway" in probe.note
+    _ = (root / "antigravity-acp-gateway").write_text("#!/x\n")
+    assert task.probe(host).presence is Presence.INSTALLED
+    shim.unlink()
+    assert "shim not found" in task.probe(host).note
+
+
+def test_gateway_installs_with_the_configured_python(host: Host, shim: Path) -> None:
+    root = gateway_host(host)
+    ctx = gateway_context(host, PYTHON, python=PYTHON)
+    _ = asyncio.run(T3AntigravityAcpGateway().install(ctx))
+    assert ctx.commands == [install_command(shim, root, PYTHON)]
+
+
+@pytest.mark.usefixtures("shim")
+def test_gateway_skips_reinstall_when_current(host: Host) -> None:
+    _ = gateway_host(host, installed=f"#!{PYTHON} -I\n{SHIM_BODY}")
+    ctx = gateway_context(host, PYTHON)
+    _ = asyncio.run(T3AntigravityAcpGateway().update(ctx))
+    assert ctx.commands == []
+
+
+def test_gateway_reinstalls_when_the_checkout_changed(host: Host, shim: Path) -> None:
+    root = gateway_host(host, installed=f"#!{PYTHON} -I\nprint('shim v1')\n")
+    ctx = gateway_context(host, PYTHON)
+    _ = asyncio.run(T3AntigravityAcpGateway().update(ctx))
+    assert ctx.commands == [install_command(shim, root, PYTHON)]
+
+
+def test_gateway_reinstalls_when_the_configured_python_changed(host: Host, shim: Path) -> None:
+    root = gateway_host(host, installed=f"#!{PYTHON} -I\n{SHIM_BODY}")
+    ctx = gateway_context(host, PYTHON, "/usr/bin/python3", python="/usr/bin/python3")
+    _ = asyncio.run(T3AntigravityAcpGateway().update(ctx))
+    assert ctx.commands == [install_command(shim, root, "/usr/bin/python3")]
+
+
+@pytest.mark.usefixtures("shim")
+def test_gateway_resolves_a_bare_configured_name(host: Host) -> None:
+    host.local_bin.mkdir(parents=True)
+    python = host.local_bin / "python3"
+    _ = python.write_text("#!/bin/sh\n")
+    python.chmod(0o755)
+    _ = gateway_host(host, installed=f"#!{python} -I\n{SHIM_BODY}")
+    ctx = gateway_context(host, str(python), python="python3")
+    _ = asyncio.run(T3AntigravityAcpGateway().update(ctx))
+    assert ctx.commands == []
+
+
+def test_gateway_version_changes_with_the_interpreter(host: Host) -> None:
+    root = gateway_host(host, installed=f"#!{PYTHON} -I\n{SHIM_BODY}")
+    task, ctx = T3AntigravityAcpGateway(), FakeContext(host)
+    before = asyncio.run(task.version(ctx))
+    _ = (root / "antigravity-acp-gateway").write_text(f"#!/usr/bin/python3 -I\n{SHIM_BODY}")
+    after = asyncio.run(task.version(ctx))
+    assert before is not None
+    assert after is not None
+    assert before != after
+
+
+@pytest.mark.usefixtures("shim")
+def test_gateway_fails_without_a_usable_python(host: Host) -> None:
+    _ = gateway_host(host, installed=f"#!{PYTHON} -I\nold\n")
+    ctx = gateway_context(host)  # nothing answers as a 3.11+ non-venv Python
+    with pytest.raises(TaskFailed, match=r"set tasks\.t3-antigravity-acp-gateway\.python"):
+        _ = asyncio.run(T3AntigravityAcpGateway().update(ctx))
+    assert ctx.commands == []
+
+
+@pytest.mark.usefixtures("shim")
+def test_gateway_install_needs_the_acp_launcher(host: Host) -> None:
+    with pytest.raises(Skip, match="install t3-antigravity-acp first"):
+        _ = asyncio.run(
+            T3AntigravityAcpGateway().install(gateway_context(host, PYTHON, python=PYTHON))
+        )
+
+
+def test_gateway_is_off_by_default_and_takes_a_python_option() -> None:
+    task = next(t for t in builtin_tasks() if t.info.id == "t3-antigravity-acp-gateway")
+    assert not is_enabled(task, parse({}))
+    config = parse(
+        tomllib.loads(
+            '[tasks.t3-antigravity-acp-gateway]\nenabled = true\npython = "/usr/bin/python3"'
+        )
+    )
+    check_config(config)
+    assert is_enabled(task, config)
+    assert config.task("t3-antigravity-acp-gateway").string("python") == "/usr/bin/python3"

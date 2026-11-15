@@ -846,13 +846,17 @@ def install(python: str, install_root: Path) -> Path:
         # The kernel splits a shebang line at the first space.
         raise SystemExit(f"{interpreter!r} contains whitespace, which a shebang line cannot hold")
     probe = subprocess.run(
-        [interpreter, "-c", "import sys; print(sys.version_info >= (3, 11))"],
+        [interpreter, "-c", "import sys; print(sys.version_info >= (3, 11), sys.prefix != sys.base_prefix)"],
         capture_output=True,
         text=True,
         check=False,
     )
-    if probe.stdout.strip() != "True":
+    new_enough, in_venv = (probe.stdout.split() + ["", ""])[:2]
+    if new_enough != "True":
         raise SystemExit(f"{interpreter} must be Python 3.11 or newer")
+    if in_venv == "True":
+        # The shebang would break when that virtualenv is removed.
+        raise SystemExit(f"{interpreter} belongs to a virtualenv; use a system or Homebrew Python")
     if not (install_root / LAUNCHER_NAME).exists():
         raise SystemExit(f"no {LAUNCHER_NAME} in {install_root}; run update_antigravity_acp.py first")
     source = Path(__file__).read_text(encoding="utf-8").split("\n", 1)[1]

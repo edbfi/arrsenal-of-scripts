@@ -17,6 +17,7 @@ Linux, without disturbing sessions that are using them. It replaces the
 | `skills` | `bunx skills update -g` | n/a |
 | `agent-browser` | `agent-browser install` (browser for the current CLI) | **skipped** |
 | `t3-antigravity-acp` | [`../t3-antigravity-acp`](../t3-antigravity-acp/README.md) `--yes`, then deletes releases nothing runs (keeps current and previous) | updated (versioned dirs + symlink) |
+| `t3-antigravity-acp-gateway` *(off by default)* | reinstalls the [gateway shim](../t3-antigravity-acp/README.md#gateway-shim-models-and-thinking-levels-from-cliproxyapi) when this checkout's copy changes | updated (atomic replace) |
 | `uv-tools` *(off by default)* | `uv tool upgrade`, per tool | each tool in use is skipped |
 
 `upkeep list` prints the same table for the current config.
@@ -37,6 +38,11 @@ Once every host runs upkeep, the `update-ai` / `codex-update` /
 `_codex_prune_releases` functions can come out of `~/.zshrc` (radxa:
 `~/.config/zsh/ai-tools.zsh`), and `~/.t3/custom-tools/update_antigravity_acp.py`
 is no longer needed (keep the rest of `~/.t3/custom-tools`: that is the install).
+
+To keep the Antigravity gateway shim installed and current on a host, run
+`upkeep install t3-antigravity-acp-gateway` once and enable it in the config
+(`[tasks.t3-antigravity-acp-gateway]`, `enabled = true`). Its shebang keeps the
+interpreter it was installed with; set `python = "..."` there to choose another.
 
 ## Use
 
