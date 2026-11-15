@@ -1,5 +1,6 @@
 """Tasks that maintain something other than a CLI binary."""
 
+import hashlib
 import shutil
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import TYPE_CHECKING, override
 from upkeep import layout
 from upkeep.config import BusyPolicy
 from upkeep.execute import CommandError
-from upkeep.model import Probe, Skip, TaskInfo
+from upkeep.model import Probe, Skip, TaskFailed, TaskInfo
 from upkeep.procs import ProcMatcher, describe
 from upkeep.sources import classify
 from upkeep.tasks.base import Task, TaskContext, parse_version
@@ -22,6 +23,13 @@ ACP_LOCK_BUSY = 75  # update_antigravity_acp.py: another updater holds the lock
 ACP_LOCK = ".antigravity-acp.lock"
 ACP_CURRENT = "antigravity-acp-current"
 ACP_PREVIOUS = "antigravity-acp-previous"
+ACP_LAUNCHER = "antigravity-acp"
+GATEWAY_NAME = "antigravity-acp-gateway"  # what antigravity_acp_gateway.py --install writes
+# Tried in order when nothing is configured or installed. Stable names, not
+# resolved paths, so a shebang survives the interpreter's own upgrades.
+PYTHON_CANDIDATES = ("python3", "python3.14", "python3.13", "python3.12", "python3.11")
+# A virtualenv interpreter could vanish with its venv (upkeep's own included).
+USABLE_PYTHON = "import sys; print(sys.version_info >= (3, 11) and sys.prefix == sys.base_prefix)"
 
 
 class AgentBrowser(Task):
@@ -172,6 +180,123 @@ class T3AntigravityAcp(Task):
     @override
     async def install(self, ctx: TaskContext) -> str | None:
         return await self._updater(ctx)
+
+
+class T3AntigravityAcpGateway(Task):
+    """Keep the T3 Antigravity gateway shim installed beside the ACP launcher.
+
+    The shim lives in this checkout, which self-update keeps current; this task
+    reinstalls it when the checkout's copy differs from the installed one. Off
+    by default: T3 uses it only once its Antigravity *Binary path* points at it.
+    Installing replaces the file atomically, so running sessions keep theirs.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            TaskInfo(
+                id="t3-antigravity-acp-gateway",
+                title="t3 antigravity acp gateway",
+                summary="reinstall antigravity_acp_gateway.py when this checkout's copy changes",
+                after=("t3-antigravity-acp",),
+                when_busy=BusyPolicy.ALLOW,
+                enabled_by_default=False,
+                busy_note="the installed file is replaced atomically",
+                options=frozenset({"python"}),
+            )
+        )
+
+    @staticmethod
+    def target(host: Host) -> Path:
+        return T3AntigravityAcp.install_root(host) / GATEWAY_NAME
+
+    @override
+    def probe(self, host: Host) -> Probe:
+        if not layout.ACP_GATEWAY.is_file():
+            return Probe.missing(f"shim not found at {layout.ACP_GATEWAY}")
+        if not (T3AntigravityAcp.install_root(host) / ACP_LAUNCHER).exists():
+            return Probe.missing("needs the ACP launcher (run `upkeep install t3-antigravity-acp`)")
+        target = self.target(host)
+        if not target.is_file():
+            return Probe.missing(f"not set up (run `upkeep install {self.info.id}`)")
+        return Probe.installed(target)
+
+    @override
+    async def version(self, ctx: TaskContext) -> str | None:
+        target = self.target(ctx.host)
+        return _digest(_body(target)) if target.is_file() else None
+
+    @override
+    async def update(self, ctx: TaskContext) -> str | None:
+        target = self.target(ctx.host)
+        interpreter = await self._interpreter(ctx)
+        if (
+            target.is_file()
+            and _body(target) == _body(layout.ACP_GATEWAY)
+            and _shebang_interpreter(target) == interpreter
+        ):
+            return None
+        root = T3AntigravityAcp.install_root(ctx.host)
+        _ = await ctx.run(
+            interpreter,
+            "-I",
+            layout.ACP_GATEWAY,
+            "--install",
+            "--python",
+            interpreter,
+            "--install-root",
+            root,
+        )
+        return None
+
+    async def _interpreter(self, ctx: TaskContext) -> str:
+        """The configured interpreter, else the installed one, else the first usable on PATH."""
+        configured = ctx.settings.string("python")
+        if configured:
+            candidates = [configured]
+        else:
+            installed = _shebang_interpreter(self.target(ctx.host))
+            on_path = [str(p) for name in PYTHON_CANDIDATES if (p := ctx.host.which(name))]
+            candidates = [*([installed] if installed else []), *on_path]
+        for candidate in dict.fromkeys(candidates):
+            result = await ctx.query(candidate, "-c", USABLE_PYTHON)
+            if result.ok and result.text.strip() == "True":
+                return candidate
+        raise TaskFailed(
+            f"no Python 3.11+ outside a virtualenv among {', '.join(candidates) or 'PATH'};"
+            + f" set tasks.{self.info.id}.python"
+        )
+
+    @property
+    @override
+    def installable(self) -> bool:
+        return layout.ACP_GATEWAY.is_file()
+
+    @override
+    async def install(self, ctx: TaskContext) -> str | None:
+        if not (T3AntigravityAcp.install_root(ctx.host) / ACP_LAUNCHER).exists():
+            raise Skip("install t3-antigravity-acp first")
+        return await self.update(ctx)
+
+
+def _body(path: Path) -> bytes:
+    """The script without its shebang, which --install rewrites per host."""
+    return path.read_bytes().partition(b"\n")[2]
+
+
+def _digest(body: bytes) -> str:
+    return hashlib.sha256(body).hexdigest()[:12]
+
+
+def _shebang_interpreter(path: Path) -> str | None:
+    try:
+        with path.open("rb") as handle:
+            first = handle.readline().decode("utf-8", "replace")
+    except OSError:
+        return None
+    parts = first.removeprefix("#!").split()
+    if not first.startswith("#!") or not parts or not Path(parts[0]).is_absolute():
+        return None
+    return parts[0]
 
 
 class UvTools(Task):

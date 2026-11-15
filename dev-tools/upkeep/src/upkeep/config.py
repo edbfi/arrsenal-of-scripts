@@ -58,6 +58,9 @@ class TaskSettings:
             return default
         return _str_tuple(self.extra[key], key)
 
+    def string(self, key: str) -> str | None:
+        return _str(self.extra[key], key) if key in self.extra else None
+
 
 @dataclass(frozen=True, slots=True)
 class CustomTask:
@@ -302,6 +305,10 @@ TEMPLATE = """\
 #
 # [tasks.uv-tools]
 # enabled = true      # off by default
+#
+# [tasks.t3-antigravity-acp-gateway]
+# enabled = true      # off by default; `upkeep install t3-antigravity-acp-gateway` first
+# python = "/usr/bin/python3"  # interpreter for its shebang (default: keep, else first 3.11+ on PATH)
 
 # Host-specific extra steps. Use `run` (argv list) or `shell` (one string).
 # [[custom]]

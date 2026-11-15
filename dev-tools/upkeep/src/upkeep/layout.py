@@ -7,6 +7,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = PACKAGE_DIR.parents[1]  # dev-tools/upkeep (holds pyproject.toml)
 DEV_TOOLS_DIR = PROJECT_DIR.parent
 ACP_UPDATER = DEV_TOOLS_DIR / "t3-antigravity-acp" / "update_antigravity_acp.py"
+ACP_GATEWAY = ACP_UPDATER.parent / "antigravity_acp_gateway.py"
 
 # Commits touching these count as upkeep updates (paths relative to DEV_TOOLS_DIR).
 OWNED_PATHS = (PROJECT_DIR.name, ACP_UPDATER.parent.name)
