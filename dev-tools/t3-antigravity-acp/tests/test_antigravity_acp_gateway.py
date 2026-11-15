@@ -300,6 +300,20 @@ class TranslatorTest(unittest.TestCase):
         }
         self.assertIs(s.t.from_agent(message), message)
 
+    def test_rewrite_line_survives_a_lone_surrogate(self) -> None:
+        line = b'{"id": 1, "method": "authenticate", "params": {"methodId": "gemini-api-key", "x": "\\ud83d"}}\n'
+        out = rewrite_line(line, Session().t.from_client)
+        self.assertEqual((as_dict(parse_json(out)) or {}).get("params"), {"methodId": "gateway"})
+        notification = b'{"method": "session/update", "params": {"sessionId": "s1", "update": {"configOptions": [], "t": "\\ud83d"}}}\n'
+        self.assertIs(rewrite_line(notification, Session().t.from_agent), notification)
+        update = json.dumps({
+            "id": 2,
+            "result": {"note": "\ud83d", "configOptions": [model_option("gemini-4-carbon(low)", AGENT_IDS)]},
+        }).encode()
+        rewritten = rewrite_line(update + b"\n", Session().t.from_agent)
+        _ = rewritten.decode("ascii")
+        self.assertEqual(rewritten.count(b"\n"), 1)
+
     def test_rewrite_line_keeps_untouched_bytes(self) -> None:
         s = Session()
         line = b'{"jsonrpc": "2.0", "method": "session/update", "params": {"x": 1}}\n'

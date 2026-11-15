@@ -742,7 +742,8 @@ def rewrite_line(line: bytes, translate: Callable[[dict[str, object]], dict[str,
     translated = translate(message)
     if translated is message:
         return line
-    return json.dumps(translated, separators=(",", ":"), ensure_ascii=False).encode() + b"\n"
+    # ASCII escapes keep the bytes valid even for a lone surrogate, which json.loads accepts.
+    return json.dumps(translated, separators=(",", ":")).encode() + b"\n"
 
 
 # ----------------------------------------------------------------------- proxy
@@ -772,8 +773,10 @@ def pump(
         for line in iter(source.readline, b""):
             _ = sink.write(rewrite_line(line, translate))
             sink.flush()
-    except (BrokenPipeError, ValueError, OSError):
-        pass
+    except BrokenPipeError:
+        pass  # The other side exited.
+    except (ValueError, OSError) as e:
+        log(f"stopped relaying messages: {type(e).__name__}: {e}")
     finally:
         with contextlib.suppress(OSError, ValueError):
             sink.close()
