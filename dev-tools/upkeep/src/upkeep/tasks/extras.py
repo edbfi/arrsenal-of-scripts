@@ -252,7 +252,8 @@ class T3AntigravityAcpGateway(Task):
         """The configured interpreter, else the installed one, else the first usable on PATH."""
         configured = ctx.settings.string("python")
         if configured:
-            candidates = [configured]
+            # --install writes the resolved path, so compare in that form.
+            candidates = [str(ctx.host.which(configured) or configured)]
         else:
             installed = _shebang_interpreter(self.target(ctx.host))
             on_path = [str(p) for name in PYTHON_CANDIDATES if (p := ctx.host.which(name))]

@@ -332,6 +332,18 @@ def test_gateway_reinstalls_when_the_configured_python_changed(host: Host, shim:
 
 
 @pytest.mark.usefixtures("shim")
+def test_gateway_resolves_a_bare_configured_name(host: Host) -> None:
+    host.local_bin.mkdir(parents=True)
+    python = host.local_bin / "python3"
+    _ = python.write_text("#!/bin/sh\n")
+    python.chmod(0o755)
+    _ = gateway_host(host, installed=f"#!{python} -I\n{SHIM_BODY}")
+    ctx = gateway_context(host, str(python), python="python3")
+    _ = asyncio.run(T3AntigravityAcpGateway().update(ctx))
+    assert ctx.commands == []
+
+
+@pytest.mark.usefixtures("shim")
 def test_gateway_fails_without_a_usable_python(host: Host) -> None:
     _ = gateway_host(host, installed=f"#!{PYTHON} -I\nold\n")
     ctx = gateway_context(host)  # nothing answers as a 3.11+ non-venv Python
