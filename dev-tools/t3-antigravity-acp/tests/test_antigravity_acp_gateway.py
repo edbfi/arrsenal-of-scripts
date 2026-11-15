@@ -174,6 +174,14 @@ class LoadCatalogTest(unittest.TestCase):
             write_cache(cache, "other", CATALOG, now=1000.0)
             self.assertIsNone(load_catalog("k", Discovery(fail=True), cache, now=1001.0))
 
+    def test_failed_cache_write_leaves_no_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "catalog.json"
+            cache.mkdir()  # os.replace cannot put a file over a directory.
+            with contextlib.redirect_stderr(io.StringIO()):
+                write_cache(cache, "k", CATALOG, now=1.0)
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ["catalog.json"])
+
     def test_discovery_result_is_cached(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cache, ok, offline = Path(tmp) / "catalog.json", Discovery(fail=False), Discovery(fail=True)

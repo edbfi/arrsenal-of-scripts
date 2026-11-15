@@ -464,6 +464,7 @@ def read_cache(path: Path, key: str) -> tuple[Catalog, float] | None:
 
 def write_cache(path: Path, key: str, catalog: Catalog, now: float) -> None:
     payload = {"schema": CATALOG_SCHEMA, "key": key, "fetched_at": now, "catalog": catalog.to_json()}
+    temp: str | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".catalog-", suffix=".json")
@@ -471,6 +472,9 @@ def write_cache(path: Path, key: str, catalog: Catalog, now: float) -> None:
             json.dump(payload, handle, indent=2)
         _ = os.replace(temp, path)
     except OSError as e:
+        if temp is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(temp)
         log(f"could not cache the model catalog: {e}")
 
 
