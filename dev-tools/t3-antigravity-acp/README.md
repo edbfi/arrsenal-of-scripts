@@ -1,4 +1,4 @@
-# T3 custom tools: Antigravity ACP updater
+# T3 custom tools: Antigravity ACP updater and gateway shim
 
 Source of truth for the updater that used to live loose in `~/.t3/custom-tools/`.
 [upkeep](../upkeep/README.md) runs it as the `t3-antigravity-acp` task, so a
@@ -42,6 +42,8 @@ matching, verifiable manifest is never reused.
 
 Credentials are not handled here. Configure API-key auth and environment
 (`GOOGLE_GEMINI_BASE_URL`, `AGY_ACP_DEFAULT_MODEL`) in T3 Code's provider settings.
+To choose models and thinking levels in T3 instead of pinning one model, see the
+[gateway shim](#gateway-shim-models-and-thinking-levels-from-cliproxyapi).
 
 ## Commands
 
@@ -67,6 +69,59 @@ Scheduled updates come from upkeep (`upkeep schedule install`); the updater
 itself never schedules anything. After each update, upkeep also deletes
 releases other than the current and previous ones that no process is running
 (about 300 MB each).
+
+## Gateway shim: models and thinking levels from CLIProxyAPI
+
+With *Gemini API key* sign-in pointed at CLIProxyAPI (CPA), ACP offers its
+built-in model list, so T3 can only pin one CPA model with
+`AGY_ACP_DEFAULT_MODEL`, and ACP still sends `thinkingLevel: high` whatever the
+pinned id says. `antigravity_acp_gateway.py` sits between T3 and the stock
+launcher and gives T3 a model picker plus a thinking-level picker, both built
+from what the CPA instance reports:
+
+- **Models.** At startup the shim lists CPA's models (`GET /v1beta/models`) and
+  keeps those matching `AGY_GATEWAY_MODEL_PATTERN` (default: Gemini 4 and
+  later). Ids that differ only by a level suffix (`-low`, `-xhigh`, ...) form one
+  family.
+- **Levels.** For each family it sends one request with an invalid level; CPA
+  rejects it locally with the levels that family supports. If CPA does not know
+  the bare family name (it may list only `<family>-high`), the listed ids are
+  probed instead. A family without levels is offered as a plain model. If CPA
+  cannot answer a probe (timeout, 429, 5xx), the refresh fails and the previous
+  catalog stays in use.
+- **Limit.** ACP accepts 32 gateway models; past that, whole families are
+  dropped, never single levels, and the default model's family is kept.
+- **Routing.** ACP runs in its gateway mode with one `family(level)` id per
+  variant. CPA applies that suffix over the request's own thinking level.
+  T3's `authenticate` is switched from `gemini-api-key` to `gateway`, and the
+  model and thinking-level choices are mapped to and from those ids. All other
+  ACP traffic passes through unchanged.
+
+Nothing about specific models is built in: a model CPA starts listing appears
+after the next catalog refresh (cached per T3 provider instance for six hours;
+stale entries are reused if CPA is unreachable). With no gateway URL and key,
+or no catalog, the shim runs the stock launcher unchanged.
+
+Install it beside the launcher with an interpreter T3 can run (3.11+):
+
+```sh
+python3.14 antigravity_acp_gateway.py --install          # writes ~/.t3/custom-tools/antigravity-acp-gateway
+python3.14 antigravity_acp_gateway.py --install --python /usr/bin/python3
+```
+
+Then, in T3's Antigravity provider settings, keep *Gemini API key* with the CPA
+key, keep `GOOGLE_GEMINI_BASE_URL`, and set *Binary path* to
+`~/.t3/custom-tools/antigravity-acp-gateway`. Optional environment:
+
+| Variable | Effect |
+| --- | --- |
+| `AGY_ACP_DEFAULT_MODEL` | Starting model: a family (`<family>`), or one level (`<family>-high`, `<family>(high)`). Default: the first family at `high`, or its nearest level. |
+| `AGY_GATEWAY_MODEL_PATTERN` | Regular expression selecting the CPA models to offer. |
+| `AGY_LLM_GATEWAY_URL`, `AGY_LLM_GATEWAY_API_KEY` | Use these instead of the T3 base URL and key. |
+
+`--catalog` prints what discovery finds for the current environment
+(`--refresh` bypasses the cache). The installed copy does not update itself;
+rerun `--install` after pulling changes.
 
 ## Development checks
 
