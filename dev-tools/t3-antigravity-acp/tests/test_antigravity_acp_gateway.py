@@ -574,6 +574,21 @@ AUTHENTICATE: dict[str, object] = {
 }
 
 
+class InstallTest(unittest.TestCase):
+    def test_interpreter_path_with_whitespace_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _ = (root / LAUNCHER_NAME).write_text("#!/bin/sh\n", encoding="utf-8")
+            spaced = root / "with space"
+            spaced.mkdir()
+            python = spaced / "python3"
+            python.symlink_to(sys.executable)
+            with self.assertRaises(SystemExit) as raised:
+                _ = install(str(python), root)
+            self.assertIn("whitespace", str(raised.exception.code))
+            self.assertFalse((root / INSTALL_NAME).exists())
+
+
 class ProxyProcessTest(unittest.TestCase):
     def test_install_writes_executable_with_interpreter_shebang(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

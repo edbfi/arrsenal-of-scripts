@@ -842,6 +842,9 @@ def install(python: str, install_root: Path) -> Path:
     interpreter = shutil.which(python) or python
     if not Path(interpreter).is_absolute() or not os.access(interpreter, os.X_OK):
         raise SystemExit(f"{python!r} is not an executable interpreter")
+    if any(char.isspace() for char in interpreter):
+        # The kernel splits a shebang line at the first space.
+        raise SystemExit(f"{interpreter!r} contains whitespace, which a shebang line cannot hold")
     probe = subprocess.run(
         [interpreter, "-c", "import sys; print(sys.version_info >= (3, 11))"],
         capture_output=True,
