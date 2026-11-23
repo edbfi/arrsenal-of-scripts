@@ -41,7 +41,7 @@ repos:
       - id: actionlint
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f  # frozen: v1.31.1
+    rev: 0eb9e4a60caf04df64b499ed1e8bef55f4440eae  # frozen: v1.33.0
     hooks:
       - id: zizmor
 
